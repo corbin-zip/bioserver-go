@@ -140,3 +140,13 @@ func (d *Database) GetHNPairs(userid string) *HNPairs {
 	}
 	return hnpairs
 }
+
+func (d *Database) GetMOTD() (string, error) {
+	var motd string
+	err := d.db.QueryRow("SELECT message FROM motd WHERE active=1 ORDER BY id DESC LIMIT 0,1").Scan(&motd)
+	if err != nil {
+		return "", fmt.Errorf("failed to get MOTD: %w", err)
+	}
+	fmt.Println("Returning MOTD:", motd)
+	return motd, nil
+}

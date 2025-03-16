@@ -89,14 +89,16 @@ func (p *PacketHandler) getNextPacketID() int {
 	return p.packetIDCounter
 }
 
-func (p *PacketHandler) addOutPacket(server *ServerThread, socket net.Conn, packet *Packet) {
+func (ph *PacketHandler) addOutPacket(server *ServerThread, socket net.Conn, p *Packet) {
+	fmt.Printf("PacketHandler addOutPacket() 0x%X - who: %s cmd: %s qsw: %s\n", p.cmd, commands.GetConstName(p.who), commands.GetConstName(p.cmd), commands.GetConstName(p.qsw))
+
 	event := ServerDataEvent{
 		server: server,
 		socket: socket,
-		data:   packet.GetPacketData(),
+		data:   p.GetPacketData(),
 	}
 	select {
-	case p.queue <- event:
+	case ph.queue <- event:
 	default:
 		fmt.Println("PacketHandler addOutPacket() PacketHandler queue full")
 	}
@@ -123,19 +125,18 @@ func (ph *PacketHandler) ProcessData(server *ServerThread, socket net.Conn, data
 		}
 		packetData := data[offset : offset+packetSize]
 		p := NewPacketFromBytes(packetData)
-		
 
-        // fmt.Printf("PacketHandler ProcessData() - In cmd: 0x%X (%s)\n", p.cmd, commands.GetConstName(p.cmd))
+		// fmt.Printf("PacketHandler ProcessData() - In cmd: 0x%X (%s)\n", p.cmd, commands.GetConstName(p.cmd))
 		// if p.cmd == commands.LOGIN && ph.clients.FindClientBySocket(socket) != nil {
-			// fmt.Println("PacketHandler ProcessData() Dropping duplicate login packet")
+		// fmt.Println("PacketHandler ProcessData() Dropping duplicate login packet")
 		// } else {
 		ph.HandleInPacket(server, socket, p)
-        // }
+		// }
 
 		offset += packetSize
 		remaining -= packetSize
 
-        // fmt.Printf("PacketHandler ProcessData() %p: Processed packet of size %d, remaining: %d\n", socket, packetSize, remaining)
+		// fmt.Printf("PacketHandler ProcessData() %p: Processed packet of size %d, remaining: %d\n", socket, packetSize, remaining)
 	}
 
 }
@@ -156,11 +157,11 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			// case commands.UNKN61A1:
 			//     send61A1(server, socket, packet)
 			case commands.HNSELECT:
-			    ph.sendHNSelect(server, socket, packet)
+				ph.sendHNSelect(server, socket, packet)
 			case commands.UNKN6002:
 				ph.send6002(server, socket, packet)
-			// case commands.MOTHEDAY:
-			//     sendMotheday(server, socket, packet)
+			case commands.MOTHEDAY:
+				ph.sendMotheday(server, socket, packet)
 			// case commands.CHARSELECT:
 			//     sendCharSelect(server, socket, packet)
 			// case commands.UNKN6881:
@@ -272,26 +273,25 @@ func (ph *PacketHandler) checkSession(server *ServerThread, socket net.Conn, p *
 
 	fmt.Printf("PacketHandler checkSession() Session: %s with UserID: %s\n", session, userid)
 
-
 	if userid != "" {
 		// loop through clients and remove old connections
 		// then setup client object for this user/session
 		// TODO: (should this be implemented by clients.go instead?)
 		cl := ph.clients.FindClientByUserID(userid)
 		if cl != nil {
-            fmt.Printf("PacketHandler checkSession() Found a client with UserID %s: %v\n", userid, cl)
+			fmt.Printf("PacketHandler checkSession() Found a client with UserID %s: %v\n", userid, cl)
 			fmt.Println("PacketHandler checkSession() TODO looping through clients to remove old connections...")
-			// for _, c := range ph.clients.GetList() {
-			// 	if c.userID == userid {
-            //         fmt.Printf("We want to remove client with UserID %s: %v\n", userid, c)
-            //         // server.Disconnect(c.socket)
+			for _, c := range ph.clients.GetList() {
+				if c.userID == userid {
+					fmt.Printf("PacketHandler checkSession() removing client with UserID %s & socket %p\n", userid, c.socket)
+					// server.Disconnect(c.socket)
 
-			// 		// ph.removeClient(server, c)
+					ph.removeClient(server, c)
 
-            //         // pretty sure this one is a dupe:
-			// 		// server.Disconnect(c.socket)
-			// 	}
-			// }
+					// pretty sure this one is a dupe:
+					// server.Disconnect(c.socket)
+				}
+			}
 		}
 
 		ph.clients.Add(NewClient(socket, userid, session))
@@ -342,10 +342,10 @@ func (ph *PacketHandler) sendCheckRnd(server *ServerThread, socket net.Conn, p *
 func (ph *PacketHandler) checkPatchLevel(server *ServerThread, socket net.Conn, p *Packet) bool {
 	// for testing just get the version string and dump the packet
 
-	// packetData := p.GetPacketData()
-	// fmt.Printf("Packet data: %v\n", packetData)
-	// version := p.GetVersion()
-	// fmt.Printf("Decrypted client version: %s\n", version)
+	packetData := p.GetPacketData()
+	fmt.Printf("PacketHandler checkPatchLevel() Packet data: %v\n", packetData)
+	version := p.GetVersion()
+	fmt.Printf("PacketHandler checkPatchLevel() Decrypted client version: %s\n", version)
 
 	// check if the client has the latest patch level
 	// if not, send patch
@@ -369,7 +369,7 @@ func (ph *PacketHandler) sendHNSelect(server *ServerThread, socket net.Conn, ps 
 	//TODO: optimize FindClient[...] calls; can we just pass in a client or no?
 	var p *Packet
 	chosen := make([]byte, 8)
-	hn := ps.GetDecryptedHNPair()	
+	hn := ps.GetDecryptedHNPair()
 
 	ph.clients.FindClientBySocket(socket).hnPair = hn
 
@@ -406,10 +406,18 @@ func (ph *PacketHandler) sendHNSelect(server *ServerThread, socket net.Conn, ps 
 	p = NewPacketWithoutPayload(commands.UNKN6104, commands.BROADCAST, commands.SERVER, ph.getNextPacketID())
 	ph.addOutPacket(server, socket, p)
 
+}
 
-	
-
-
+func (ph *PacketHandler) sendMotheday(server *ServerThread, socket net.Conn, p *Packet) {
+	message, err := ph.db.GetMOTD()
+	if err != nil {
+		message = "error getting motd..."
+		fmt.Printf("Failed to get MOTD: %v\n", err)
+	}
+	fmt.Printf("PacketHandler sendMotheday() sending MOTD message: %s\n", message)
+	motd := NewMOTD(1, message)
+	motdp := NewPacket(commands.MOTHEDAY, commands.TELL, commands.SERVER, p.pid, motd.GetPacket())
+	ph.addOutPacket(server, socket, motdp)
 }
 
 func (ph *PacketHandler) removeClient(server *ServerThread, cl *Client) {
@@ -519,14 +527,14 @@ func (ph *PacketHandler) send6002(server *ServerThread, socket net.Conn, ps *Pac
 }
 
 func (ph *PacketHandler) RemoveClientNoDisconnect(server *ServerThread, socket net.Conn) {
-    cl := ph.clients.FindClientBySocket(socket)
+	cl := ph.clients.FindClientBySocket(socket)
 
 	if cl == nil {
 		return
 	}
-    cl.ConnAlive = false
+	cl.ConnAlive = false
 
-	fmt.Printf("PacketHandler Removing client no disconnect %s\n", cl.userID)
+	fmt.Printf("PacketHandler RemoveClientNoDisconnect() client: %s socket: %p\n", cl.userID, socket)
 	// // If needed, lock the client (e.g., cl.mu.Lock(); defer cl.mu.Unlock())
 	// area := cl.area
 	// room := cl.room
@@ -595,4 +603,3 @@ func (ph *PacketHandler) RemoveClientNoDisconnect(server *ServerThread, socket n
 	// // Broadcast the updated room player count.
 	// ph.broadcastRoomPlayerCnt(server, area, room)
 }
-
