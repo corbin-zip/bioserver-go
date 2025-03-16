@@ -26,11 +26,11 @@ func main() {
 
 	// set up the packethandler in its own thread
 	wg.Add(1)
-	packetHandler := &PacketHandler{}
+	packetHandler := NewPacketHandler()
 	go packetHandler.Run()
 
 	// create the lobby server thread
-	lobbyServer, err := NewServerThread("localhost", LOBBYPORT, packetHandler)
+	lobbyServer, err := NewServerThread("192.168.1.135", LOBBYPORT, packetHandler)
 	if err != nil {
 		fmt.Println("Error creating lobby server:", err)
 		return
@@ -40,7 +40,7 @@ func main() {
 
 	// create the game server thread
 	gamePacketHandler := &GameServerPacketHandler{}
-	gameServer := NewGameServerThread("localhost", GAMEPORT, gamePacketHandler)
+	gameServer := NewGameServerThread("192.168.1.135", GAMEPORT, gamePacketHandler)
 	wg.Add(1)
 	go gamePacketHandler.Run()
 	wg.Add(1)
