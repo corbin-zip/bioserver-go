@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
+	"log"
 	"main/commands"
 	"net"
 )
@@ -20,6 +23,7 @@ type PacketHandler struct {
 	gameNumber              int
 	db                      *Database
 	clients                 *ClientList
+	areas                   *Areas
 }
 
 func NewPacketHandler() *PacketHandler {
@@ -29,6 +33,7 @@ func NewPacketHandler() *PacketHandler {
 		queue:                   make(chan ServerDataEvent, 100),
 		gameNumber:              1,
 		clients:                 NewClientList(),
+		areas:                   NewAreas(),
 	}
 }
 
@@ -162,16 +167,16 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 				ph.send6002(server, socket, packet)
 			case commands.MOTHEDAY:
 				ph.sendMotheday(server, socket, packet)
-			// case commands.CHARSELECT:
-			//     sendCharSelect(server, socket, packet)
-			// case commands.UNKN6881:
-			//     send6881(server, socket, packet)
-			// case commands.UNKN6882:
-			//     send6882(server, socket, packet)
-			// case commands.RANKINGS:
-			//     sendRankings(server, socket, packet)
-			// case commands.AREACOUNT:
-			//     sendAreaCount(server, socket, packet)
+			case commands.CHARSELECT:
+				ph.sendCharSelect(server, socket, packet)
+			case commands.UNKN6881:
+				ph.send6881(server, socket, packet)
+			case commands.UNKN6882:
+				ph.send6882(server, socket, packet)
+			case commands.RANKINGS:
+				ph.sendRankings(server, socket, packet)
+			case commands.AREACOUNT:
+				ph.sendAreaCount(server, socket, packet)
 			// case commands.AREAPLAYERCNT:
 			//     sendAreaPlayerCnt(server, socket, packet)
 			// case commands.AREASTATUS:
@@ -418,6 +423,116 @@ func (ph *PacketHandler) sendMotheday(server *ServerThread, socket net.Conn, p *
 	motd := NewMOTD(1, message)
 	motdp := NewPacket(commands.MOTHEDAY, commands.TELL, commands.SERVER, p.pid, motd.GetPacket())
 	ph.addOutPacket(server, socket, motdp)
+}
+
+func (ph *PacketHandler) sendCharSelect(server *ServerThread, socket net.Conn, p *Packet) {
+	// cl := ph.clients.FindClientBySocket(socket)
+	// cl.SetCharacterStats(p.GetCharacterStats())
+
+	outp := NewPacketWithoutPayload(commands.CHARSELECT, commands.TELL, commands.SERVER, p.pid)
+	ph.addOutPacket(server, socket, outp)
+}
+
+func (ph *PacketHandler) send6881(server *ServerThread, socket net.Conn, p *Packet) {
+	datacount := []byte{0x01, 0, 0, 0x12, 0x5D}
+
+	outp := NewPacket(commands.UNKN6881, commands.TELL, commands.SERVER, p.pid, datacount)
+	ph.addOutPacket(server, socket, outp)
+}
+
+func (ph *PacketHandler) send6882(server *ServerThread, socket net.Conn, p *Packet) {
+	pl := p.pay // []byte containing the packet payload
+	nr := int(pl[0])
+	offset := int(pl[1])<<24 | int(pl[2])<<16 | int(pl[3])<<8 | int(pl[4])
+	sizeL := int(pl[5])<<24 | int(pl[6])<<16 | int(pl[7])<<8 | int(pl[8])
+	data := Packet6881GetData(nr, offset, sizeL)
+	outp := NewPacket(commands.UNKN6882, commands.TELL, commands.SERVER, p.pid, data)
+	ph.addOutPacket(server, socket, outp)
+}
+
+// sendRankings requests player rankings per area.
+// For the moment we are sending the same (empty) rankings for every area.
+// Format:
+// areanumber, x1, x2, x3, x4, points rank 7204th, cleartime rank 16998th, 13500 points, x8, x9, x10
+// status(1 alive), character, sizeid, id, size handle, handle
+func (ph *PacketHandler) sendRankings(server *ServerThread, socket net.Conn, ps *Packet) {
+	emptyRankings := []byte{
+		0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x06, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+		0x00, 0x10, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+		0x00, 0x00, 0x00, 0x06, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+		0x00, 0x10, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+		0x00, 0x00, 0x00, 0x06, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+		0x00, 0x10, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+		0x00, 0x00, 0x00, 0x06, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+		0x00, 0x10, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+		0x00, 0x00, 0x00, 0x06, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+		0x00, 0x10, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+	}
+
+	// ranking for which area is requested
+	emptyRankings[0] = ps.pay[0]
+	emptyRankings[1] = ps.pay[1]
+
+	// Create a byte slice of fixed size: 2+8+1+7*4+6*(1+1+2+6+2+16) = 207 bytes.
+	buf := make([]byte, 207)
+	r := bytes.NewBuffer(buf[:0]) // empty buffer with capacity 207
+
+	// Write values using big-endian order:
+	// Write short: scenario from ps.Payload[1]
+	if err := binary.Write(r, binary.BigEndian, uint16(ps.pay[1])); err != nil {
+		log.Printf("binary.Write error: %v", err)
+	}
+	// Write int: 111*100
+	binary.Write(r, binary.BigEndian, int32(111*100))
+	// Write int: ps.Payload[1] as int32
+	binary.Write(r, binary.BigEndian, int32(ps.pay[1]))
+	// Write byte: 0
+	r.WriteByte(0)
+	// Write int: 310*10
+	binary.Write(r, binary.BigEndian, int32(310*10))
+	// Write int: 320*10
+	binary.Write(r, binary.BigEndian, int32(320*10))
+	// Write int: 330*100 (rank cleartime)
+	binary.Write(r, binary.BigEndian, int32(330*100))
+	// Write int: 340*100
+	binary.Write(r, binary.BigEndian, int32(340*100))
+	// Write int: 350
+	binary.Write(r, binary.BigEndian, int32(350))
+	// Write int: 360*100
+	binary.Write(r, binary.BigEndian, int32(360*100))
+	// Write int: 370
+	binary.Write(r, binary.BigEndian, int32(370))
+
+	// For each of the 6 ranking entries:
+	for t := 0; t < 6; t++ {
+		r.WriteByte(1)                                // status: 1 = alive
+		r.WriteByte(byte(t))                          // character
+		binary.Write(r, binary.BigEndian, uint16(6))  // handle length: 6
+		r.Write([]byte("HANDLE"))                     // handle (6 bytes)
+		binary.Write(r, binary.BigEndian, uint16(16)) // fixed, rest is spaced 0x20
+		r.WriteByte(byte(0x41 + t))                   // 1st byte of name to mark
+		r.Write([]byte("- RANKTEST     "))            // name (assumed to be 16 bytes)
+	}
+
+	// Looks like first half = ranking with resultpoints
+	// second half = ranking with cleartimepoints
+	emptyRankings = r.Bytes()
+
+	p := NewPacket(commands.RANKINGS, commands.TELL, commands.SERVER, ps.pid, emptyRankings)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendAreaCount(server *ServerThread, socket net.Conn, ps *Packet) {
+	areacount := []byte{0, 10}
+
+	areacount[0] = byte((ph.areas.GetAreaCount() >> 8) & 0xFF)
+	areacount[1] = byte((ph.areas.GetAreaCount()) & 0xFF)
+
+	outp := NewPacket(commands.AREACOUNT, commands.TELL, commands.SERVER, ps.pid, areacount)
+	ph.addOutPacket(server, socket, outp)
 }
 
 func (ph *PacketHandler) removeClient(server *ServerThread, cl *Client) {
