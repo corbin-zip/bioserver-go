@@ -4,6 +4,8 @@ import (
 	"io"
 	"log"
 	"strings"
+	"math/rand"
+	"fmt"
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
@@ -40,4 +42,25 @@ func (hnp *HNPair) GetHNPair() []byte {
 	hnpair[9] = byte(len(hnp.nickname))
 	copy(hnpair[10:], hnp.nickname)
 	return hnpair
+}
+
+func (hnp *HNPair) CreateHandle(db *Database) {
+	allowed := []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	for {
+		handle := make([]byte, 6)
+		for i := 0; i < 6; i++ {
+			handle[i] = allowed[rand.Intn(len(allowed))]
+		}
+
+		handleCheck, err := db.CheckHandle(string(handle))
+		if (err != nil) {
+			fmt.Printf("HNPair CreateHandle() error: %v\n", err)
+		}
+
+		if handleCheck == true {
+			hnp.handle = handle
+			break
+		}
+	}
 }

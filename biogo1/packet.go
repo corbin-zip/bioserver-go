@@ -27,6 +27,18 @@ func NewPacket(command int, questionanswer byte, whosends byte, packetid int, pa
 	}
 }
 
+func NewPacketWithoutPayload(command int, questionanswer byte, whosends byte, packetid int) *Packet {
+	return &Packet{
+		who: whosends,
+		qsw: questionanswer,
+		cmd: command,
+		len: 0,
+		pid: packetid,
+		err: 0,
+		pay: nil,
+	}
+}
+
 func NewPacketFromBytes(data []byte) *Packet {
 	return &Packet{
 		who: data[0],
@@ -86,4 +98,27 @@ func (p *Packet) calcShift(i byte, pb byte) byte {
 	fixval := []byte{21, 23, 10, 17, 23, 19, 6, 13}
 	masks := []byte{0x33, 0x30, 0x3c, 0x34, 0x2d, 0x30, 0x3c, 0x34}
 	return byte(fixval[i&7] - (i & 0xf8) - pb + ((pb-9+i)&masks[i&7])*2)
+}
+
+// decrypt chosen handle/nickname
+func (p *Packet) GetDecryptedHNPair() *HNPair {
+	hlen := ((int(p.pay[0]) << 8) | int(p.pay[1])) - 2           // skip the sum
+	nlen := ((int(p.pay[hlen+4]) << 8) | int(p.pay[hlen+5])) - 2 // skip the sum
+
+	for i := 0; i < hlen; i++ {
+		p.pay[4+i] = byte(p.pay[4+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
+	}
+
+	for i := 0; i < nlen; i++ {
+		p.pay[hlen+8+i] = byte(p.pay[hlen+8+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
+	}
+
+	handle := make([]byte, hlen)
+	nickname := make([]byte, nlen)
+
+	copy(handle, p.pay[4:4+hlen])
+	copy(nickname, p.pay[hlen+8:hlen+8+nlen])
+
+	return (NewHNPairFromBytes(handle, nickname))
+
 }

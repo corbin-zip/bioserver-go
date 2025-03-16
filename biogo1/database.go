@@ -4,6 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"io"
+	"bytes"
+	
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/transform"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -40,6 +45,66 @@ func (d *Database) GetUserID(session string) (string, error) {
 		return "", fmt.Errorf("failed to get user id: %w", err)
 	}
 	return userID, nil
+}
+
+func (d *Database) CheckHandle(handle string) (bool, error) {
+	var count int
+	err := d.db.QueryRow("SELECT count(*) as cnt FROM hnpairs WHERE handle=?", handle).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to get count for handle %s: %w", handle, err)
+	}
+	if count == 0 {
+		return true, nil
+	} else {
+		return false, nil
+	}
+}
+
+func decodeSJIS(b []byte) (string, error) {
+	r := transform.NewReader(bytes.NewReader(b), japanese.ShiftJIS.NewDecoder())
+	decoded,err := io.ReadAll(r)
+	if err != nil {
+		return "", err
+	}
+	return string(decoded), nil
+}
+
+func (d * Database) CreateNewHNPair(cl *Client) {
+	uid := cl.userID
+	handle := string(cl.hnPair.handle)
+	var nickname string
+
+	if dec, err := decodeSJIS(cl.hnPair.nickname); err != nil {
+		nickname = "sjis"
+		log.Printf("ShiftJIS decoding failed: %v", err)
+	} else {
+		nickname = dec
+	}
+	query := "INSERT INTO hnpairs (userid, handle, nickname) VALUES (?, ?, ?)"
+
+	if _, err := d.db.Exec(query, uid, handle, nickname); err != nil {
+		log.Printf("Failed to insert HNPair: %v", err)
+	}
+
+}
+
+// what is the point of this ...?
+func (d * Database) UpdateHNPair(cl *Client) {
+	uid := cl.userID
+	handle := string(cl.hnPair.handle)
+	var nickname string
+
+	if dec, err := decodeSJIS(cl.hnPair.nickname); err != nil {
+		nickname = "sjis"
+		log.Printf("ShiftJIS decoding failed: %v", err)
+	} else {
+		nickname = dec
+	}
+	query := "UPDATE hnpairs SET nickname=? WHERE userid=? AND handle=?"
+
+	if _, err := d.db.Exec(query, nickname, uid, handle); err != nil {
+		log.Printf("Failed to update HNPair: %v", err)
+	}
 }
 
 func (d *Database) UpdateClientOrigin(userid string, state, area, room, slot int) error {

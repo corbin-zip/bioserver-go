@@ -83,36 +83,6 @@ func (s *ServerThread) accept(conn net.Conn) {
 	go s.read(conn)
 }
 
-// func (s *ServerThread) read(conn net.Conn) {
-// 	buffer := make([]byte, 1024)
-// 	for {
-// 		n, err := conn.Read(buffer)
-// 		if err != nil {
-// 			log.Println("!!! Read error from", conn.RemoteAddr(), err)
-// 			s.close(conn)
-// 			return
-// 		}
-// 		if n == 0 {
-// 			continue
-// 		}
-// 		data := buffer[:n]
-// 		s.mu.Lock()
-// 		rb, exists := s.readBuffers[conn]
-// 		s.mu.Unlock()
-// 		if !exists {
-// 			rb = NewServerStreamBuffer()
-// 			s.mu.Lock()
-// 			s.readBuffers[conn] = rb
-// 			s.mu.Unlock()
-// 		}
-// 		msg := rb.Append(data)
-// 		if msg != nil && s.packetHandler != nil {
-// 			fmt.Printf("ServerThread read() %p conn, sending msg to ProcessData()\n", conn)
-// 			s.packetHandler.ProcessData(s, conn, msg)
-// 		}
-// 	}
-// }
-
 func (s *ServerThread) read(conn net.Conn) {
 	buffer := make([]byte, 1024)
 	for {

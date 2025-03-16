@@ -13,10 +13,10 @@ type Client struct {
 	room           int
 	slot           int
 	GameNumber     int
-	player         byte // number of this player (1-4)
-	ConnAlive      bool // set back every 60sec or be disconnected
-	host           byte // host of a gameslot
-	//hnPair         HNPair    //chosen handle/nickname
+	player         byte    // number of this player (1-4)
+	ConnAlive      bool    // set back every 60sec or be disconnected
+	host           byte    // host of a gameslot
+	hnPair         *HNPair //chosen handle/nickname
 }
 
 func NewClient(socket net.Conn, userID string, session string) *Client {
