@@ -22,7 +22,6 @@ func (a *Areas) GetAreaCount() int {
 	return len(a.areas)
 }
 
-// GetName returns the name of the area with the given number.
 func (a *Areas) GetName(areaNumber int) string {
 	// Java code uses areas.get(areanumber-1)
 	if areaNumber <= 0 || areaNumber > len(a.areas) {
@@ -31,7 +30,6 @@ func (a *Areas) GetName(areaNumber int) string {
 	return a.areas[areaNumber-1].name
 }
 
-// GetDescription returns the description of the area with the given number.
 func (a *Areas) GetDescription(areaNumber int) string {
 	if areaNumber <= 0 || areaNumber > len(a.areas) {
 		return ""
@@ -39,7 +37,6 @@ func (a *Areas) GetDescription(areaNumber int) string {
 	return a.areas[areaNumber-1].description
 }
 
-// GetStatus returns the status of the area with the given number.
 func (a *Areas) GetStatus(areaNumber int) byte {
 	if areaNumber <= 0 || areaNumber > len(a.areas) {
 		return 0

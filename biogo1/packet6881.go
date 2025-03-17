@@ -177,7 +177,7 @@ var data = []byte{
 // Packet6881GetData returns a slice of bytes constructed based on the given
 // parameters. It mimics the behavior of the Java getData() method.
 func Packet6881GetData(nr, offset, sizeL int) []byte {
-	fmt.Printf("Packet6881GetData() nr %i requested; ignoring it though. Problem?\n", nr)
+	fmt.Printf("Packet6881GetData() nr %d requested; ignoring it though. Problem?\n", nr)
 	// Check if the requested size exceeds the available bytes.
 	avail := len(data) - offset
 	if sizeL > avail {

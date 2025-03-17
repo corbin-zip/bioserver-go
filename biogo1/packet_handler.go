@@ -177,16 +177,16 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 				ph.sendRankings(server, socket, packet)
 			case commands.AREACOUNT:
 				ph.sendAreaCount(server, socket, packet)
-			// case commands.AREAPLAYERCNT:
-			//     sendAreaPlayerCnt(server, socket, packet)
-			// case commands.AREASTATUS:
-			//     sendAreaStatus(server, socket, packet)
+			case commands.AREAPLAYERCNT:
+				ph.sendAreaPlayerCnt(server, socket, packet)
+			case commands.AREASTATUS:
+				ph.sendAreaStatus(server, socket, packet)
 			// case commands.AREANAME:
 			//     sendAreaName(server, socket, packet)
 			// case commands.AREADESCRIPT:
 			//     sendAreaDescript(server, socket, packet)
-			// case commands.AREASELECT:
-			//     sendAreaSelect(server, socket, packet)
+			case commands.AREASELECT:
+				ph.sendAreaSelect(server, socket, packet)
 			// case commands.ROOMSCOUNT:
 			//     sendRoomsCount(server, socket, packet)
 			// case commands.ROOMPLAYERCNT:
@@ -289,12 +289,7 @@ func (ph *PacketHandler) checkSession(server *ServerThread, socket net.Conn, p *
 			for _, c := range ph.clients.GetList() {
 				if c.userID == userid {
 					fmt.Printf("PacketHandler checkSession() removing client with UserID %s & socket %p\n", userid, c.socket)
-					// server.Disconnect(c.socket)
-
 					ph.removeClient(server, c)
-
-					// pretty sure this one is a dupe:
-					// server.Disconnect(c.socket)
 				}
 			}
 		}
@@ -533,6 +528,84 @@ func (ph *PacketHandler) sendAreaCount(server *ServerThread, socket net.Conn, ps
 
 	outp := NewPacket(commands.AREACOUNT, commands.TELL, commands.SERVER, ps.pid, areacount)
 	ph.addOutPacket(server, socket, outp)
+}
+
+func (ph *PacketHandler) sendAreaPlayerCnt(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,0; 0,0; 0xff, 0xff; 0,0
+	areaplayercount := []byte{0, 0, 0, 0, 0, 0, 0xff, 0xff, 0, 0}
+	nr := ps.GetNumber()
+	cnt := ph.clients.CountPlayersInArea(nr)
+
+	areaplayercount[0] = byte(nr>>8) & 0xff
+	areaplayercount[1] = byte(nr) & 0xff
+	areaplayercount[2] = byte(cnt[0]>>8) & 0xff
+	areaplayercount[3] = byte(cnt[0]) & 0xff
+	areaplayercount[4] = byte(cnt[1]>>8) & 0xff
+	areaplayercount[5] = byte(cnt[1]) & 0xff
+	areaplayercount[8] = byte(cnt[2]>>8) & 0xff
+	areaplayercount[9] = byte(cnt[2]) & 0xff
+
+	p := NewPacket(commands.AREAPLAYERCNT, commands.TELL, commands.SERVER, ps.pid, areaplayercount)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendAreaStatus(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,0; 0;
+	areastatus := []byte{0, 0, 0}
+	nr := ps.GetNumber()
+
+	areastatus[0] = byte(nr>>8) & 0xff
+	areastatus[1] = byte(nr) & 0xff
+	areastatus[2] = ph.areas.GetStatus(nr)
+
+	p := NewPacket(commands.AREASTATUS, commands.TELL, commands.SERVER, ps.pid, areastatus)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendAreaSelect(server *ServerThread, socket net.Conn, ps *Packet) {
+	retval := []byte{0, 0}
+	nr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, nr, 0, 0)
+	retval[0] = byte(nr>>8) & 0xff
+	retval[1] = byte(nr) & 0xff
+
+	p := NewPacket(commands.AREASELECT, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+
+	ph.broadcastAreaPlayerCnt(server, socket, nr)
+
+}
+
+func (ph *PacketHandler) broadcastAreaPlayerCnt(server *ServerThread, socket net.Conn, nr int) {
+	// 0,0; 0,0; 0xff,0xff; 0,0
+	areaplayercount := []byte{0, 0, 0, 0, 0, 0, 0xff, 0xff, 0, 0}
+	cnt := ph.clients.CountPlayersInArea(nr)
+	cnt[2] = cnt[2] + ph.clients.CountPlayersInRoom(51, 0) + ph.gameServerPacketHandler.CountInGamePlayers()
+
+	areaplayercount[0] = byte(nr>>8) & 0xff
+	areaplayercount[1] = byte(nr) & 0xff
+	areaplayercount[2] = byte(cnt[0]>>8) & 0xff
+	areaplayercount[3] = byte(cnt[0]) & 0xff
+	areaplayercount[4] = byte(cnt[1]>>8) & 0xff
+	areaplayercount[5] = byte(cnt[1]) & 0xff
+	areaplayercount[8] = byte(cnt[2]>>8) & 0xff
+	areaplayercount[9] = byte(cnt[2]) & 0xff
+
+	p := NewPacket(commands.AREAPLAYERCNT, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), areaplayercount)
+	ph.broadcastInAreaNAreaSelect(server, p, nr)
+}
+
+func (ph *PacketHandler) broadcastInAreaNAreaSelect(server *ServerThread, p *Packet, area int) {
+	cls := ph.clients.GetList()
+	for _, cl := range cls {
+		if cl.area == area || (cl.area == 0 && cl.room == 0) {
+			// TODO: original java source touches the queue directly here
+			// should we do the same or use addOutPacket?
+			ph.addOutPacket(server, cl.socket, p)
+		}
+	}
+
 }
 
 func (ph *PacketHandler) removeClient(server *ServerThread, cl *Client) {

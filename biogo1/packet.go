@@ -122,3 +122,8 @@ func (p *Packet) GetDecryptedHNPair() *HNPair {
 	return (NewHNPairFromBytes(handle, nickname))
 
 }
+
+// return first 2 bytes of payload as int
+func (p *Packet) GetNumber() int {
+	return int(uint16((p.pay[0])<<8) | uint16(p.pay[1]))
+}
