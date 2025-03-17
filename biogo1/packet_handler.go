@@ -24,17 +24,19 @@ type PacketHandler struct {
 	db                      *Database
 	clients                 *ClientList
 	areas                   *Areas
+	rooms                   *Rooms
 }
 
 func NewPacketHandler() *PacketHandler {
-	return &PacketHandler{
-		gameServerPacketHandler: nil,
-		packetIDCounter:         0,
-		queue:                   make(chan ServerDataEvent, 100),
-		gameNumber:              1,
-		clients:                 NewClientList(),
-		areas:                   NewAreas(),
-	}
+	ph := &PacketHandler{}
+	ph.gameServerPacketHandler = nil
+	ph.packetIDCounter = 0
+	ph.queue = make(chan ServerDataEvent, 100)
+	ph.gameNumber = 1
+	ph.clients = NewClientList()
+	ph.areas = NewAreas()
+	ph.rooms = NewRooms(ph.areas.GetAreaCount())
+	return ph
 }
 
 func (ph *PacketHandler) Run() {
@@ -187,8 +189,8 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			//     sendAreaDescript(server, socket, packet)
 			case commands.AREASELECT:
 				ph.sendAreaSelect(server, socket, packet)
-			// case commands.ROOMSCOUNT:
-			//     sendRoomsCount(server, socket, packet)
+			case commands.ROOMSCOUNT:
+				ph.sendRoomsCount(server, socket, packet)
 			// case commands.ROOMPLAYERCNT:
 			//     sendRoomPlayerCnt(server, socket, packet)
 			// case commands.ROOMSTATUS:
@@ -574,7 +576,17 @@ func (ph *PacketHandler) sendAreaSelect(server *ServerThread, socket net.Conn, p
 	ph.addOutPacket(server, socket, p)
 
 	ph.broadcastAreaPlayerCnt(server, socket, nr)
+}
 
+func (ph *PacketHandler) sendRoomsCount(server *ServerThread, socket net.Conn, ps *Packet) {
+	countbytes := []byte{0, 0}
+	count := ph.rooms.GetRoomCount()
+
+	countbytes[0] = byte(count>>8) & 0xff
+	countbytes[1] = byte(count) & 0xff
+
+	p := NewPacket(commands.ROOMSCOUNT, commands.TELL, commands.SERVER, ps.pid, countbytes)
+	ph.addOutPacket(server, socket, p)
 }
 
 func (ph *PacketHandler) broadcastAreaPlayerCnt(server *ServerThread, socket net.Conn, nr int) {
