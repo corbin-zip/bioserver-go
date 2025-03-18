@@ -25,6 +25,7 @@ type PacketHandler struct {
 	clients                 *ClientList
 	areas                   *Areas
 	rooms                   *Rooms
+	slots                   *Slots
 }
 
 func NewPacketHandler() *PacketHandler {
@@ -36,6 +37,7 @@ func NewPacketHandler() *PacketHandler {
 	ph.clients = NewClientList()
 	ph.areas = NewAreas()
 	ph.rooms = NewRooms(ph.areas.GetAreaCount())
+	ph.slots = NewSlots(ph.areas.GetAreaCount(), ph.rooms.GetRoomCount())
 	return ph
 }
 
@@ -183,24 +185,120 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 				ph.sendAreaPlayerCnt(server, socket, packet)
 			case commands.AREASTATUS:
 				ph.sendAreaStatus(server, socket, packet)
-			// case commands.AREANAME:
-			//     sendAreaName(server, socket, packet)
-			// case commands.AREADESCRIPT:
-			//     sendAreaDescript(server, socket, packet)
+			case commands.AREANAME:
+				ph.sendAreaName(server, socket, packet)
+			case commands.AREADESCRIPT:
+				ph.sendAreaDescript(server, socket, packet)
 			case commands.AREASELECT:
 				ph.sendAreaSelect(server, socket, packet)
 			case commands.ROOMSCOUNT:
 				ph.sendRoomsCount(server, socket, packet)
-			// case commands.ROOMPLAYERCNT:
-			//     sendRoomPlayerCnt(server, socket, packet)
-			// case commands.ROOMSTATUS:
-			//     sendRoomStatus(server, socket, packet)
-			// case commands.ROOMNAME:
-			//     sendRoomName(server, socket, packet)
-			// case commands.UNKN6308:
-			//     send6308(server, socket, packet)
-			// case commands.ENTERROOM:
-			//     sendEnterRoom(server, socket, packet)
+			case commands.ROOMPLAYERCNT:
+				ph.sendRoomPlayerCnt(server, socket, packet)
+			case commands.ROOMSTATUS:
+				ph.sendRoomStatus(server, socket, packet)
+			case commands.ROOMNAME:
+				ph.sendRoomName(server, socket, packet)
+			case commands.UNKN6308:
+				ph.send6308(server, socket, packet)
+			case commands.ENTERROOM:
+				ph.sendEnterRoom(server, socket, packet)
+			case commands.SLOTCOUNT:
+				ph.sendSlotCount(server, socket, packet)
+			case commands.SLOTSTATUS:
+				ph.sendSlotStatus(server, socket, packet)
+			// case commands.SLOTPLRSTATUS:
+			// 	ph.sendSlotPlayerStatus(server, socket, packet)
+			// case commands.SLOTTITLE:
+			// 	ph.sendSlotTitle(server, socket, packet)
+			// case commands.SLOTATTRIB2:
+			// 	ph.sendSlotAttrib2(server, socket, packet)
+			// case commands.SLOTPWDPROT:
+			// 	ph.sendPasswdProtect(server, socket, packet)
+			// case commands.SLOTSCENTYPE:
+			// 	ph.sendSlotSceneType(server, socket, packet)
+			// case commands.RULESCOUNT:
+			// 	ph.sendRulesCount(server, socket, packet)
+			// case commands.RULEATTCOUNT:
+			// 	ph.sendRuleAttCount(server, socket, packet)
+			// case 0x6601:
+			// 	ph.send6601(server, socket, packet)
+			// case 0x6602:
+			// 	ph.send6602(server, socket, packet)
+			// case commands.RULEDESCRIPT:
+			// 	ph.sendRuleDescript(server, socket, packet)
+			// case commands.RULEVALUE:
+			// 	ph.sendRuleValue(server, socket, packet)
+			// case commands.RULEATTRIB:
+			// 	ph.sendRuleattrib(server, socket, packet)
+			// case commands.ATTRDESCRIPT:
+			// 	ph.sendAttrDescript(server, socket, packet)
+			// case commands.ATTRATTRIB:
+			// 	ph.sendAttrAttrib(server, socket, packet)
+			// case commands.PLAYERSTATS:
+			// 	ph.sendPlayerStats(server, socket, packet)
+			// case commands.EXITSLOTLIST:
+			// 	ph.sendExitSlotlist(server, socket, packet)
+			// case commands.EXITAREA:
+			// 	ph.sendExitArea(server, socket, packet)
+			// case commands.CREATESLOT:
+			// 	ph.sendCreateSlot(server, socket, packet)
+			// case commands.SCENESELECT:
+			// 	ph.sendSceneSelect(server, socket, packet)
+			// case commands.SLOTNAME:
+			// 	ph.sendSlotName(server, socket, packet)
+			// case commands.SETRULE:
+			// 	ph.sendSetRule(server, socket, packet)
+			// case 0x660c:
+			// 	ph.send660c(server, socket, packet)
+			// case commands.SLOTTIMER:
+			// 	ph.sendSlotTimer(server, socket, packet)
+			// case 0x6412:
+			// 	ph.send6412(server, socket, packet)
+			// case 0x6504:
+			// 	ph.send6504(server, socket, packet)
+			// case commands.CANCELSLOT:
+			// 	ph.sendCancelSlot(server, socket, packet)
+			// case commands.SLOTPASSWD:
+			// 	ph.sendSlotPasswd(server, socket, packet)
+			// case commands.PLAYERCOUNT:
+			// 	ph.sendPlayerCount(server, socket, packet)
+			// case commands.PLAYERNUMBER:
+			// 	ph.sendPlayerNumber(server, socket, packet)
+			// case commands.PLAYERSTAT:
+			// 	ph.sendPlayerStat(server, socket, packet)
+			// case commands.PLAYERSCORE:
+			// 	ph.sendPlayerScore(server, socket, packet)
+			// case commands.GAMESESSION:
+			// 	ph.sendGameSession(server, socket, packet)
+			// case commands.GAMEDIFF:
+			// 	ph.sendDifficulty(server, socket, packet)
+			// case commands.GSINFO:
+			// 	ph.sendGSinfo(server, socket, packet)
+			// case commands.ENTERAGL:
+			// 	ph.sendEnterAGL(server, socket, packet)
+			// case commands.AGLSTATS:
+			// 	ph.sendAGLstats(server, socket, packet)
+			// case commands.AGLPLAYERCNT:
+			// 	ph.sendAGLplayerCnt(server, socket, packet)
+			// case commands.LEAVEAGL:
+			// 	ph.sendLeaveAGL(server, socket, packet)
+			// case commands.JOINGAME:
+			// 	ph.sendJoinGame(server, socket, packet)
+			// case commands.GETINFO:
+			// 	ph.sendGetInfo(server, socket, packet)
+			// case commands.EVENTDAT:
+			// 	ph.sendEventDat(server, socket, packet)
+			// case commands.BUDDYLIST:
+			// 	ph.sendBuddyList(server, socket, packet)
+			// case commands.CHECKBUDDY:
+			// 	ph.sendCheckBuddy(server, socket, packet)
+			// case commands.PRIVATEMSG:
+			// 	ph.sendPrivateMsg(server, socket, packet)
+			// case commands.UNKN6181:
+			// 	ph.send6181(server, socket, packet)
+			// case commands.LOGOUT:
+			// 	ph.sendLogout(server, socket, packet)
 			default:
 				fmt.Printf("PacketHandler HandleInPacket() Unknown or unimplemented command on query: 0x%X (%s)\n", packet.cmd, commands.GetConstName(packet.cmd))
 			}
@@ -578,6 +676,84 @@ func (ph *PacketHandler) sendAreaSelect(server *ServerThread, socket net.Conn, p
 	ph.broadcastAreaPlayerCnt(server, socket, nr)
 }
 
+func (ph *PacketHandler) sendAreaName(server *ServerThread, socket net.Conn, ps *Packet) {
+	nr := ps.GetNumber()
+	name := ph.areas.GetName(nr)
+	namebytes := make([]byte, len(name)+4)
+	namebytes[0] = byte(nr>>8) & 0xff
+	namebytes[1] = byte(nr) & 0xff
+	namebytes[2] = byte(len(name)>>8) & 0xff
+	namebytes[3] = byte(len(name)) & 0xff
+	copy(namebytes[4:], []byte(name))
+	p := NewPacket(commands.AREANAME, commands.TELL, commands.SERVER, ps.pid, namebytes)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendAreaDescript(server *ServerThread, socket net.Conn, ps *Packet) {
+	nr := ps.GetNumber()
+	desc := ph.areas.GetDescription(nr)
+	descbytes := make([]byte, len(desc)+4)
+	descbytes[0] = byte(nr>>8) & 0xff
+	descbytes[1] = byte(nr) & 0xff
+	descbytes[2] = byte(len(desc)>>8) & 0xff
+	descbytes[3] = byte(len(desc)) & 0xff
+	copy(descbytes[4:], []byte(desc))
+	p := NewPacket(commands.AREADESCRIPT, commands.TELL, commands.SERVER, ps.pid, descbytes)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendRoomPlayerCnt(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0x00,0x01; 0x00,0x00; 0x00,0x03; 0xff,0xff; 0,0
+	area := ph.clients.FindClientBySocket(socket).area
+	room := ps.GetNumber()
+	roomplayercount := []byte{0x00, 0x01, 0x00, 0x00, 0x00, 0x03, 0xff, 0xff, 0, 0}
+	roomplayercount[0] = byte(room>>8) & 0xff
+	roomplayercount[1] = byte(room) & 0xff
+	cnt := ph.clients.CountPlayersInRoom(area, room)
+	roomplayercount[2] = byte(cnt>>8) & 0xff
+	roomplayercount[3] = byte(cnt) & 0xff
+	cnt = ph.gameServerPacketHandler.CountInGamePlayers() + ph.clients.CountPlayersInRoom(51, 0)
+	roomplayercount[4] = byte(cnt>>8) & 0xff
+	roomplayercount[5] = byte(cnt) & 0xff
+	p := NewPacket(commands.ROOMPLAYERCNT, commands.TELL, commands.SERVER, ps.pid, roomplayercount)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendRoomStatus(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0x00,0x00; 0x00
+	retval := []byte{0x00, 0x00, 0x00}
+	roomnr := ps.GetNumber()
+	area := ph.clients.FindClientBySocket(socket).area
+	retval[0] = byte(roomnr>>8) & 0xff
+	retval[1] = byte(roomnr) & 0xff
+	retval[2] = ph.rooms.GetStatus(area, roomnr)
+	p := NewPacket(commands.ROOMSTATUS, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendRoomName(server *ServerThread, socket net.Conn, ps *Packet) {
+	roomnr := ps.GetNumber()
+	area := ph.clients.FindClientBySocket(socket).area
+	name := ph.rooms.GetName(area, roomnr)
+	namebytes := make([]byte, len(name)+4)
+	namebytes[0] = byte(roomnr>>8) & 0xff
+	namebytes[1] = byte(roomnr) & 0xff
+	namebytes[2] = byte(len(name)>>8) & 0xff
+	namebytes[3] = byte(len(name)) & 0xff
+	copy(namebytes[4:], []byte(name))
+	p := NewPacket(commands.ROOMNAME, commands.TELL, commands.SERVER, ps.pid, namebytes)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) send6308(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0x00,0x01; 0x00,0x02; 0x81,0x40
+	retval := []byte{0x00, 0x01, 0x00, 0x02, 0x81, 0x40}
+	retval[0] = ps.pay[0]
+	retval[1] = ps.pay[1]
+	p := NewPacket(commands.UNKN6308, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
 func (ph *PacketHandler) sendRoomsCount(server *ServerThread, socket net.Conn, ps *Packet) {
 	countbytes := []byte{0, 0}
 	count := ph.rooms.GetRoomCount()
@@ -586,6 +762,84 @@ func (ph *PacketHandler) sendRoomsCount(server *ServerThread, socket net.Conn, p
 	countbytes[1] = byte(count) & 0xff
 
 	p := NewPacket(commands.ROOMSCOUNT, commands.TELL, commands.SERVER, ps.pid, countbytes)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendEnterRoom(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0x00,0x00
+	retval := []byte{0, 0}
+	roomnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	cl.room = roomnr
+	ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, area, roomnr, 0)
+	retval[0] = byte(roomnr>>8) & 0xff
+	retval[1] = byte(roomnr) & 0xff
+	p := NewPacket(commands.ENTERROOM, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+	ph.broadcastRoomPlayerCnt(server, area, roomnr)
+}
+
+func (ph *PacketHandler) broadcastRoomPlayerCnt(server *ServerThread, area, room int) {
+	// 0x00,0x01; 0x00,0x00; 0x00,0x03; 0xff,0xff; 0,0
+	roomplayercount := []byte{0x00, 0x01, 0x00, 0x00, 0x00, 0x03, 0xff, 0xff, 0, 0}
+	roomplayercount[0] = byte(room>>8) & 0xff
+	roomplayercount[1] = byte(room) & 0xff
+	cnt := ph.clients.CountPlayersInRoom(area, room)
+	roomplayercount[2] = byte(cnt>>8) & 0xff
+	roomplayercount[3] = byte(cnt) & 0xff
+	cnt = ph.gameServerPacketHandler.CountInGamePlayers() + ph.clients.CountPlayersInRoom(51, 0)
+	roomplayercount[4] = byte(cnt>>8) & 0xff
+	roomplayercount[5] = byte(cnt) & 0xff
+	p := NewPacket(commands.ROOMPLAYERCNT, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), roomplayercount)
+	ph.broadcastInArea(server, p, area)
+}
+
+func (ph *PacketHandler) broadcastInArea(server *ServerThread, p *Packet, area int) {
+	cls := ph.clients.GetList()
+	for _, cl := range cls {
+		if cl.area == area && cl.room == 0 {
+			ph.addOutPacket(server, cl.socket, p)
+		}
+	}
+}
+
+func (ph *PacketHandler) sendSlotCount(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,0
+	slotcount := []byte{0, 0}
+	cnt := ph.slots.GetSlotCount()
+	slotcount[0] = byte(cnt>>8) & 0xff
+	slotcount[1] = byte(cnt) & 0xff
+	p := NewPacket(commands.SLOTCOUNT, commands.TELL, commands.SERVER, ps.pid, slotcount)
+	ph.addOutPacket(server, socket, p)
+}
+
+/* 3/17 - this function is currently broken, or maybe
+	it's one of the functions it's calling, or maybe it's
+	responding to a bad packet or something. who knows...
+	it seems like it's calling GetStatus with slotnr = 0	
+	which leads to inputting a negative value and thus trying
+	to access a negative index in the status array. 
+	
+	3/18 - i "fixed" this by deviating from how the java code
+	initializes its values. essentially, i "zero indexed" areas
+	and slot numbers. i haven't seen any drawbacks to this yet,
+	but i have a suspicion that there's a reason it was 1-indexed
+	in the original java code...*/
+
+func (ph *PacketHandler) sendSlotStatus(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0x00,0x00; 0x00
+	slotnr := ps.GetNumber()
+	fmt.Printf("PacketHandler sendSlotStatus() slotnr: %d\n", slotnr) // Debug print
+	slotstatus := []byte{0x00,0x00, 0x00}
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	fmt.Printf("PacketHandler sendSlotStatus() area: %d, room: %d\n", area, room) // Debug print
+	slotstatus[0] = byte(slotnr>>8) & 0xff
+	slotstatus[1] = byte(slotnr) & 0xff
+	slotstatus[2] = ph.slots.GetStatus(area, room, slotnr)
+	p := NewPacket(commands.SLOTSTATUS, commands.TELL, commands.SERVER, ps.pid, slotstatus)
 	ph.addOutPacket(server, socket, p)
 }
 
