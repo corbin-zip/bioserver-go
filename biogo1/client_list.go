@@ -50,6 +50,16 @@ func (cl *ClientList) Remove(c *Client) {
 	}
 }
 
+func (cl *ClientList) CountPlayersInSlot(area, room, slot int) int {
+	count := 0
+	for _, c := range cl.clients {
+		if c.slot == slot && c.area == area && c.room == room {
+			count++
+		}
+	}
+	return count
+}
+
 func (cl *ClientList) CountPlayersInArea(nr int) []int {
 	// TODO: what is unknown 3rd value? is it ingame?
 	retval := []int{0, 0, 0}

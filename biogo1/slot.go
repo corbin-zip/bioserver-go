@@ -5,7 +5,7 @@ import "time"
 const (
 	STATUS_DISABLED byte = 0
 	STATUS_FREE     byte = 1
-	STATUS_INCREASE byte = 2
+	STATUS_INCREATE byte = 2
 	STATUS_GAMESET  byte = 3
 	STATUS_BUSY     byte = 4
 

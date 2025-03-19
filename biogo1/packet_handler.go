@@ -26,6 +26,7 @@ type PacketHandler struct {
 	areas                   *Areas
 	rooms                   *Rooms
 	slots                   *Slots
+	// rules                   *RuleSet
 }
 
 func NewPacketHandler() *PacketHandler {
@@ -38,6 +39,7 @@ func NewPacketHandler() *PacketHandler {
 	ph.areas = NewAreas()
 	ph.rooms = NewRooms(ph.areas.GetAreaCount())
 	ph.slots = NewSlots(ph.areas.GetAreaCount(), ph.rooms.GetRoomCount())
+	// ph.rules = NewRuleSet()
 	return ph
 }
 
@@ -207,30 +209,30 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 				ph.sendSlotCount(server, socket, packet)
 			case commands.SLOTSTATUS:
 				ph.sendSlotStatus(server, socket, packet)
-			// case commands.SLOTPLRSTATUS:
-			// 	ph.sendSlotPlayerStatus(server, socket, packet)
-			// case commands.SLOTTITLE:
-			// 	ph.sendSlotTitle(server, socket, packet)
-			// case commands.SLOTATTRIB2:
-			// 	ph.sendSlotAttrib2(server, socket, packet)
-			// case commands.SLOTPWDPROT:
-			// 	ph.sendPasswdProtect(server, socket, packet)
-			// case commands.SLOTSCENTYPE:
-			// 	ph.sendSlotSceneType(server, socket, packet)
-			// case commands.RULESCOUNT:
-			// 	ph.sendRulesCount(server, socket, packet)
-			// case commands.RULEATTCOUNT:
-			// 	ph.sendRuleAttCount(server, socket, packet)
-			// case 0x6601:
-			// 	ph.send6601(server, socket, packet)
-			// case 0x6602:
-			// 	ph.send6602(server, socket, packet)
-			// case commands.RULEDESCRIPT:
-			// 	ph.sendRuleDescript(server, socket, packet)
-			// case commands.RULEVALUE:
-			// 	ph.sendRuleValue(server, socket, packet)
-			// case commands.RULEATTRIB:
-			// 	ph.sendRuleattrib(server, socket, packet)
+			case commands.SLOTPLRSTATUS:
+				ph.sendSlotPlayerStatus(server, socket, packet)
+			case commands.SLOTTITLE:
+				ph.sendSlotTitle(server, socket, packet)
+			case commands.SLOTATTRIB2:
+				ph.sendSlotAttrib2(server, socket, packet)
+			case commands.SLOTPWDPROT:
+				ph.sendPasswdProtect(server, socket, packet)
+			case commands.SLOTSCENTYPE:
+				ph.sendSlotSceneType(server, socket, packet)
+			case commands.RULESCOUNT:
+				ph.sendRulesCount(server, socket, packet)
+			case commands.RULEATTCOUNT:
+				ph.sendRuleAttCount(server, socket, packet)
+			case commands.UNKN6601:
+				ph.send6601(server, socket, packet)
+			case commands.UNKN6602:
+				ph.send6602(server, socket, packet)
+			case commands.RULEDESCRIPT:
+				ph.sendRuleDescript(server, socket, packet)
+			case commands.RULEVALUE:
+				ph.sendRuleValue(server, socket, packet)
+			case commands.RULEATTRIB:
+				ph.sendRuleAttrib(server, socket, packet)
 			// case commands.ATTRDESCRIPT:
 			// 	ph.sendAttrDescript(server, socket, packet)
 			// case commands.ATTRATTRIB:
@@ -241,8 +243,8 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			// 	ph.sendExitSlotlist(server, socket, packet)
 			// case commands.EXITAREA:
 			// 	ph.sendExitArea(server, socket, packet)
-			// case commands.CREATESLOT:
-			// 	ph.sendCreateSlot(server, socket, packet)
+			case commands.CREATESLOT:
+				ph.sendCreateSlot(server, socket, packet)
 			// case commands.SCENESELECT:
 			// 	ph.sendSceneSelect(server, socket, packet)
 			// case commands.SLOTNAME:
@@ -509,11 +511,13 @@ func (ph *PacketHandler) sendHNSelect(server *ServerThread, socket net.Conn, ps 
 }
 
 func (ph *PacketHandler) sendMotheday(server *ServerThread, socket net.Conn, p *Packet) {
-	message, err := ph.db.GetMOTD()
-	if err != nil {
-		message = "error getting motd..."
-		fmt.Printf("Failed to get MOTD: %v\n", err)
-	}
+	// message, err := ph.db.GetMOTD()
+	// if err != nil {
+	// 	message = "error getting motd..."
+	// 	fmt.Printf("Failed to get MOTD: %v\n", err)
+	// }
+	// TODO testing
+	message := "nomotd"
 	fmt.Printf("PacketHandler sendMotheday() sending MOTD message: %s\n", message)
 	motd := NewMOTD(1, message)
 	motdp := NewPacket(commands.MOTHEDAY, commands.TELL, commands.SERVER, p.pid, motd.GetPacket())
@@ -814,24 +818,230 @@ func (ph *PacketHandler) sendSlotCount(server *ServerThread, socket net.Conn, ps
 	ph.addOutPacket(server, socket, p)
 }
 
+func (ph *PacketHandler) sendSlotPlayerStatus(server *ServerThread, socket net.Conn, ps *Packet) {
+	//0x00,0x00; 0x00,0x00; 0x00,0x00; 0x00,0x00, 0x00,0x00
+	retval := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := ps.GetNumber()
+	retval[0] = byte(slotnr>>8) & 0xff
+	retval[1] = byte(slotnr) & 0xff
+	retval[3] = byte(ph.clients.CountPlayersInSlot(area, room, slotnr))
+	retval[5] = byte(0) // TODO: what is this value?
+	retval[7] = byte(ph.slots.GetMaximumPlayers(area, room, slotnr))
+	retval[9] = retval[3] // TODO: what is playin2?
+	p := NewPacket(commands.SLOTPLRSTATUS, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendSlotTitle(server *ServerThread, socket net.Conn, ps *Packet) {
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+
+	var slotname []byte
+	// character test slot. maybe remove? not sure TODO
+	if area == 0x002 && room == 0x001 && slotnr == 0x003 {
+		slotname = []byte("Testgame")
+	} else {
+		slotname = ph.slots.GetName(area, room, slotnr)
+	}
+
+	slotnamebytes := make([]byte, len(slotname)+4)
+	slotnamebytes[0] = byte(slotnr>>8) & 0xff
+	slotnamebytes[1] = byte(slotnr) & 0xff
+	slotnamebytes[2] = byte(len(slotname)>>8) & 0xff
+	slotnamebytes[3] = byte(len(slotname)) & 0xff
+	copy(slotnamebytes[4:], []byte(slotname))
+	p := NewPacket(commands.SLOTTITLE, commands.TELL, commands.SERVER, ps.pid, slotnamebytes)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendSlotAttrib2(server *ServerThread, socket net.Conn, ps *Packet) {
+	retval := []byte{
+		0, 1, // slot nr
+		0, 4, // max players for slot
+		0, 4,
+		0, 1,
+		0, 4,
+		0, 1,
+	}
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	retval[0] = byte(slotnr>>8) & 0xff
+	retval[1] = byte(slotnr) & 0xff
+	retval[3] = ph.slots.GetMaximumPlayers(area, room, slotnr)
+	// TODO: what do these attributes mean? extend slots get/set with those
+	p := NewPacket(commands.SLOTATTRIB2, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendPasswdProtect(server *ServerThread, socket net.Conn, ps *Packet) {
+	//0,1; 0
+	retval := []byte{0, 1, 0}
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	retval[0] = byte(slotnr>>8) & 0xff
+	retval[1] = byte(slotnr) & 0xff
+	retval[2] = ph.slots.GetProtection(area, room, slotnr)
+	p := NewPacket(commands.SLOTPWDPROT, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendSlotSceneType(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,0; 0,0; 0,0
+	retval := []byte{0, 0, 0, 0, 0, 0}
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	retval[0] = byte(slotnr>>8) & 0xff
+	retval[1] = byte(slotnr) & 0xff
+	retval[3] = ph.slots.GetSlotType(area, room, slotnr)
+	retval[5] = ph.slots.GetScenario(area, room, slotnr)
+	p := NewPacket(commands.SLOTSCENTYPE, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendCreateSlot(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := ps.GetNumber()
+
+	answer := []byte{0, 0}
+	cl.slot = slotnr
+	ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, area, room, slotnr)
+	cl.host = 1
+	cl.player = 1
+	ph.slots.GetSlot(area, room, slotnr).SetStatus(STATUS_INCREATE)
+	ph.slots.GetSlot(area, room, slotnr).SetLivetime()
+
+	ph.slots.GetSlot(area, room, slotnr).SetHost(cl.userID)
+
+	ph.broadcastSlotPlayerStatus(server, area, room, slotnr)
+	ph.broadcastSlotStatus(server, area, room, slotnr)
+
+	answer[1] = byte(slotnr) & 0xff
+	p := NewPacket(commands.CREATESLOT, commands.TELL, commands.SERVER, ps.pid, answer)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendRulesCount(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0
+	rulescount := []byte{0}
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := ps.GetNumber()
+	rulescount[0] = byte(ph.slots.GetRulesCount(area, room, slotnr))
+	p := NewPacket(commands.RULESCOUNT, commands.TELL, commands.SERVER, ps.pid, rulescount)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendRuleAttCount(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,0
+
+	ruleattcount := []byte{0, 0}
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	ruleattcount[0] = ps.pay[2]
+	ruleattcount[1] = ph.slots.GetRulesAttCount(area, room, slotnr, int(ps.pay[2]))
+	p := NewPacket(commands.RULEATTCOUNT, commands.TELL, commands.SERVER, ps.pid, ruleattcount)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) send6602(server *ServerThread, socket net.Conn, ps *Packet) {
+	//1; 0,0
+	retval := []byte{1, 0, 0}
+	nr := ps.GetNumber()
+	retval[1] = byte(nr>>8) & 0xff
+	retval[2] = byte(nr) & 0xff
+	p := NewPacket(commands.UNKN6602, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) send6601(server *ServerThread, socket net.Conn, ps *Packet) {
+	//1; 0,0
+	retval := []byte{1, 0, 0}
+	nr := ps.GetNumber()
+	retval[1] = byte(nr>>8) & 0xff
+	retval[2] = byte(nr) & 0xff
+	p := NewPacket(commands.UNKN6601, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendRuleDescript(server *ServerThread, socket net.Conn, ps *Packet) {
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	rule := ps.pay[2]
+	rulename := ph.slots.GetRuleName(area, room, slotnr, int(rule))
+	rulenamebytes := make([]byte, len(rulename)+3)
+	rulenamebytes[0] = rule
+	rulenamebytes[1] = byte(len(rulename)>>8) & 0xff
+	rulenamebytes[2] = byte(len(rulename)) & 0xff
+	copy(rulenamebytes[3:], []byte(rulename))
+	p := NewPacket(commands.RULEDESCRIPT, commands.TELL, commands.SERVER, ps.pid, rulenamebytes)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendRuleValue(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,0
+	retval := []byte{0, 0}
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	rule := ps.pay[2]
+	retval[0] = rule
+	retval[1] = ph.slots.GetRuleValue(area, room, slotnr, int(rule))
+	p := NewPacket(commands.RULEVALUE, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendRuleAttrib(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,0
+	retval := []byte{0, 0}
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	rule := ps.pay[2]
+	ruleatt := ph.slots.GetRuleAttribute(area, room, slotnr, int(rule))
+	retval[0] = rule
+	retval[1] = ruleatt
+	p := NewPacket(commands.RULEATTRIB, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
 /* 3/17 - this function is currently broken, or maybe
-	it's one of the functions it's calling, or maybe it's
-	responding to a bad packet or something. who knows...
-	it seems like it's calling GetStatus with slotnr = 0	
-	which leads to inputting a negative value and thus trying
-	to access a negative index in the status array. 
-	
-	3/18 - i "fixed" this by deviating from how the java code
-	initializes its values. essentially, i "zero indexed" areas
-	and slot numbers. i haven't seen any drawbacks to this yet,
-	but i have a suspicion that there's a reason it was 1-indexed
-	in the original java code...*/
+it's one of the functions it's calling, or maybe it's
+responding to a bad packet or something. who knows...
+it seems like it's calling GetStatus with slotnr = 0
+which leads to inputting a negative value and thus trying
+to access a negative index in the status array.
+
+3/18 - i "fixed" this by deviating from how the java code
+initializes its values. essentially, i "zero indexed" areas
+and slot numbers. i haven't seen any drawbacks to this yet,
+but i have a suspicion that there's a reason it was 1-indexed
+in the original java code...*/
 
 func (ph *PacketHandler) sendSlotStatus(server *ServerThread, socket net.Conn, ps *Packet) {
 	// 0x00,0x00; 0x00
 	slotnr := ps.GetNumber()
 	fmt.Printf("PacketHandler sendSlotStatus() slotnr: %d\n", slotnr) // Debug print
-	slotstatus := []byte{0x00,0x00, 0x00}
+	slotstatus := []byte{0x00, 0x00, 0x00}
 	cl := ph.clients.FindClientBySocket(socket)
 	area := cl.area
 	room := cl.room
@@ -871,7 +1081,40 @@ func (ph *PacketHandler) broadcastInAreaNAreaSelect(server *ServerThread, p *Pac
 			ph.addOutPacket(server, cl.socket, p)
 		}
 	}
+}
 
+func (ph *PacketHandler) broadcastSlotPlayerStatus(server *ServerThread, area, room, slot int) {
+	// 0x00,0x00; 0x00,0x00; 0x00,0x00; 0x00,0x00, 0x00,0x00
+	retval := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	retval[0] = byte(slot>>8) & 0xff
+	retval[1] = byte(slot) & 0xff
+	retval[3] = byte(ph.clients.CountPlayersInSlot(area, room, slot))
+	retval[5] = 0 // TODO: what is this value?
+	retval[7] = byte(ph.slots.GetMaximumPlayers(area, room, slot))
+	retval[9] = retval[3] // TODO: what is playin2?
+	p := NewPacket(commands.SLOTPLRSTATUS, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), retval)
+	ph.broadcastInSlotNRoom(server, p, area, room, slot)
+}
+
+func (ph *PacketHandler) broadcastInSlotNRoom(server *ServerThread, p *Packet, area, room, slot int) {
+	cls := ph.clients.GetList()
+	for _, cl := range cls {
+		if cl.area == area && cl.room == room && (cl.slot == slot || cl.slot == 0) {
+			// TODO: original java source touches the queue directly here
+			// should we do the same or use addOutPacket?
+			ph.addOutPacket(server, cl.socket, p)
+		}
+	}
+}
+
+func (ph *PacketHandler) broadcastSlotStatus(server *ServerThread, area, room, slot int) {
+	// 0x00,0x00; 0x00
+	retval := []byte{0x00, 0x00, 0x00}
+	retval[0] = byte(slot>>8) & 0xff
+	retval[1] = byte(slot) & 0xff
+	retval[2] = ph.slots.GetStatus(area, room, slot)
+	p := NewPacket(commands.SLOTSTATUS, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), retval)
+	ph.broadcastInSlotNRoom(server, p, area, room, slot)
 }
 
 func (ph *PacketHandler) removeClient(server *ServerThread, cl *Client) {
