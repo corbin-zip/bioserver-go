@@ -150,3 +150,11 @@ func (d *Database) GetMOTD() (string, error) {
 	fmt.Println("Returning MOTD:", motd)
 	return motd, nil
 }
+
+func (d *Database) UpdateClientGame(userid string, gameNumber int) error {
+    _, err := d.db.Exec("UPDATE sessions SET gamesess=? WHERE userid=?", gameNumber, userid)
+    if err != nil {
+        log.Printf("Failed to update client game number for userid %s: %v", userid, err)
+    }
+    return err
+}

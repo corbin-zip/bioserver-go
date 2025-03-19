@@ -95,9 +95,14 @@ func (p *PacketHandler) SendLogin(st *ServerThread, sc net.Conn) {
 }
 
 // increase the server packet id
-func (p *PacketHandler) getNextPacketID() int {
-	p.packetIDCounter++
-	return p.packetIDCounter
+func (ph *PacketHandler) getNextPacketID() int {
+	ph.packetIDCounter++
+	return ph.packetIDCounter
+}
+
+func (ph *PacketHandler) getNextGameNumber() int {
+	ph.gameNumber++
+	return ph.gameNumber
 }
 
 func (ph *PacketHandler) addOutPacket(server *ServerThread, socket net.Conn, p *Packet) {
@@ -233,32 +238,32 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 				ph.sendRuleValue(server, socket, packet)
 			case commands.RULEATTRIB:
 				ph.sendRuleAttrib(server, socket, packet)
-			// case commands.ATTRDESCRIPT:
-			// 	ph.sendAttrDescript(server, socket, packet)
-			// case commands.ATTRATTRIB:
-			// 	ph.sendAttrAttrib(server, socket, packet)
-			// case commands.PLAYERSTATS:
-			// 	ph.sendPlayerStats(server, socket, packet)
-			// case commands.EXITSLOTLIST:
-			// 	ph.sendExitSlotlist(server, socket, packet)
-			// case commands.EXITAREA:
-			// 	ph.sendExitArea(server, socket, packet)
+			case commands.ATTRDESCRIPT:
+				ph.sendAttrDescript(server, socket, packet)
+			case commands.ATTRATTRIB:
+				ph.sendAttrAttrib(server, socket, packet)
+			case commands.PLAYERSTATS:
+				ph.sendPlayerStats(server, socket, packet)
+			case commands.EXITSLOTLIST:
+				ph.sendExitSlotlist(server, socket, packet)
+			case commands.EXITAREA:
+				ph.sendExitArea(server, socket, packet)
 			case commands.CREATESLOT:
 				ph.sendCreateSlot(server, socket, packet)
-			// case commands.SCENESELECT:
-			// 	ph.sendSceneSelect(server, socket, packet)
-			// case commands.SLOTNAME:
-			// 	ph.sendSlotName(server, socket, packet)
-			// case commands.SETRULE:
-			// 	ph.sendSetRule(server, socket, packet)
-			// case 0x660c:
-			// 	ph.send660c(server, socket, packet)
-			// case commands.SLOTTIMER:
-			// 	ph.sendSlotTimer(server, socket, packet)
-			// case 0x6412:
-			// 	ph.send6412(server, socket, packet)
-			// case 0x6504:
-			// 	ph.send6504(server, socket, packet)
+			case commands.SCENESELECT:
+				ph.sendSceneSelect(server, socket, packet)
+			case commands.SLOTNAME:
+				ph.sendSlotName(server, socket, packet)
+			case commands.SETRULE:
+				ph.sendSetRule(server, socket, packet)
+			case commands.UNKN660C:
+				ph.send660C(server, socket, packet)
+			case commands.SLOTTIMER:
+				ph.sendSlotTimer(server, socket, packet)
+			case 0x6412:
+				ph.send6412(server, socket, packet)
+			case 0x6504:
+				ph.send6504(server, socket, packet)
 			// case commands.CANCELSLOT:
 			// 	ph.sendCancelSlot(server, socket, packet)
 			// case commands.SLOTPASSWD:
@@ -880,6 +885,23 @@ func (ph *PacketHandler) sendSlotAttrib2(server *ServerThread, socket net.Conn, 
 	ph.addOutPacket(server, socket, p)
 }
 
+func (ph *PacketHandler) broadcastSlotAttrib2(server *ServerThread, area, room, slotnr int) {
+	retval := []byte{
+		0, 1, // slot nr
+		0, 4, // max players for slot
+		0, 4,
+		0, 1,
+		0, 4,
+		0, 1,
+	}
+	retval[0] = byte(slotnr>>8) & 0xff
+	retval[1] = byte(slotnr) & 0xff
+	retval[3] = ph.slots.GetMaximumPlayers(area, room, slotnr)
+	// TODO: what do these attributes mean? extend slots get/set with those
+	p := NewPacket(commands.SLOTATTRIB2, commands.TELL, commands.SERVER, ph.getNextPacketID(), retval)
+	ph.broadcastInSlotNRoom(server, p, area, room, slotnr)
+}
+
 func (ph *PacketHandler) sendPasswdProtect(server *ServerThread, socket net.Conn, ps *Packet) {
 	//0,1; 0
 	retval := []byte{0, 1, 0}
@@ -907,6 +929,17 @@ func (ph *PacketHandler) sendSlotSceneType(server *ServerThread, socket net.Conn
 	retval[5] = ph.slots.GetScenario(area, room, slotnr)
 	p := NewPacket(commands.SLOTSCENTYPE, commands.TELL, commands.SERVER, ps.pid, retval)
 	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) broadcastSlotSceneType(server *ServerThread, area, room, slotnr int) {
+	// 0,0; 0,0; 0,0
+	retval := []byte{0, 0, 0, 0, 0, 0}
+	retval[0] = byte(slotnr>>8) & 0xff
+	retval[1] = byte(slotnr) & 0xff
+	retval[3] = ph.slots.GetSlotType(area, room, slotnr)
+	retval[5] = ph.slots.GetScenario(area, room, slotnr)
+	p := NewPacket(commands.SLOTSCENTYPE, commands.TELL, commands.SERVER, ph.getNextPacketID(), retval)
+	ph.broadcastInSlotNRoom(server, p, area, room, slotnr)
 }
 
 func (ph *PacketHandler) sendCreateSlot(server *ServerThread, socket net.Conn, ps *Packet) {
@@ -1024,6 +1057,283 @@ func (ph *PacketHandler) sendRuleAttrib(server *ServerThread, socket net.Conn, p
 	ph.addOutPacket(server, socket, p)
 }
 
+func (ph *PacketHandler) sendAttrAttrib(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,0, 0
+	retval := []byte{0, 0, 0}
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	rule := ps.pay[2]
+	attnr := ps.pay[3]
+	attr := ph.slots.GetRuleAttributeAtt(area, room, slotnr, int(rule), int(attnr))
+	retval[0] = rule
+	retval[1] = attnr
+	retval[2] = attr
+	p := NewPacket(commands.ATTRATTRIB, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendAttrDescript(server *ServerThread, socket net.Conn, ps *Packet) {
+	slotnr := ps.GetNumber()
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	rulenr := ps.pay[2]
+	attnr := ps.pay[3]
+	attdesc := ph.slots.GetRuleAttributeDescription(area, room, slotnr, int(rulenr), int(attnr))
+	retbytes := make([]byte, len(attdesc)+4)
+	retbytes[0] = rulenr
+	retbytes[1] = attnr
+	retbytes[2] = byte(len(attdesc)>>8) & 0xff
+	retbytes[3] = byte(len(attdesc)) & 0xff
+	copy(retbytes[4:], []byte(attdesc))
+	p := NewPacket(commands.ATTRDESCRIPT, commands.TELL, commands.SERVER, ps.pid, retbytes)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendPlayerStats(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := ps.GetNumber()
+	playerstats := ph.clients.GetPlayerStats(area, room, slotnr)
+
+	// Special character test slot handling TODO
+	if area == 2 && room == 1 && slotnr == 3 {
+		c := playerstats[3]
+		ptr := 4
+		for t := 0; t < int(c); t++ {
+			off := int(playerstats[ptr+1])
+			ptr = ptr + 2 + off // handle
+			off = int(playerstats[ptr+1])
+			ptr = ptr + 2 + off // nickname
+			off = int(playerstats[ptr+1] & 0xff)
+			ptr = ptr + 2 + off       // statistics
+			playerstats[ptr-8] = 0xff // 0x6a; // dummy value
+		}
+	}
+
+	p := NewPacket(commands.PLAYERSTATS, commands.TELL, commands.SERVER, ps.pid, playerstats)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendExitSlotlist(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	cl.room = 0
+	ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, area, room, 0)
+
+	p := NewPacketWithoutPayload(commands.EXITSLOTLIST, commands.TELL, commands.SERVER, ps.pid)
+	ph.addOutPacket(server, socket, p)
+
+	ph.broadcastRoomPlayerCnt(server, area, room)
+}
+
+func (ph *PacketHandler) sendExitArea(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	cl.area = 0
+
+	ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, 0, 0, 0)
+
+	p := NewPacketWithoutPayload(commands.EXITAREA, commands.TELL, commands.SERVER, ps.pid)
+	ph.addOutPacket(server, socket, p)
+
+	ph.broadcastAreaPlayerCnt(server, socket, area)
+}
+
+func (ph *PacketHandler) sendSlotName(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := ps.GetNumber()
+	slottitle := ps.GetDecryptedString()
+	ph.slots.GetSlot(area, room, slotnr).name = slottitle
+	p := NewPacket(commands.SLOTNAME, commands.TELL, commands.SERVER, ps.pid, ps.pay)
+	ph.addOutPacket(server, socket, p)
+	ph.broadcastSlotTitle(server, area, room, slotnr)
+
+}
+
+func (ph *PacketHandler) broadcastSlotTitle(server *ServerThread, area, room, slot int) {
+	// 0x00,0x00; 0x00,0x00; 0x00,0x00; 0x00,0x00, 0x00,0x00
+	slottitle := ph.slots.GetSlot(area, room, slot).name
+	broadcast := make([]byte, len(slottitle)+4)
+	broadcast[0] = byte(slot>>8) & 0xff
+	broadcast[1] = byte(slot) & 0xff
+	broadcast[2] = byte(len(slottitle)>>8) & 0xff
+	broadcast[3] = byte(len(slottitle)) & 0xff
+	copy(broadcast[4:], []byte(slottitle))
+	p := NewPacket(commands.SLOTTITLE, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), broadcast)
+	ph.broadcastInSlotNRoom(server, p, area, room, slot)
+}
+
+func (ph *PacketHandler) sendSetRule(server *ServerThread, socket net.Conn, ps *Packet) {
+	retval := []byte{0}
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+	rulenr := ps.pay[0]
+	ruleval := ps.pay[1]
+
+	slot := ph.slots.GetSlot(area, room, slotnr)
+	slot.SetRuleValue(int(rulenr), ruleval)
+
+	p := NewPacket(commands.SETRULE, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) send660C(server *ServerThread, socket net.Conn, ps *Packet) {
+	p := NewPacket(commands.UNKN660C, commands.TELL, commands.SERVER, ps.pid, ps.pay)
+	ph.addOutPacket(server, socket, p)
+}
+
+// 1st word is slottype: 0011 = dvd, 0012 = hdd
+// 2nd word are the scenes: wild things 0001, underbelly 0002, flashback 0003, desperate times 0004
+func (ph *PacketHandler) sendSceneSelect(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,0; 0,0x12; 0,2
+	scenetype := []byte{0, 0, 0, 0x12, 0, 2}
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+
+	scenetype[1] = byte(slotnr) & 0xff // slot
+	scenetype[3] = ps.pay[1] // type
+	scenetype[5] = ps.pay[3] // scenario
+
+	slot := ph.slots.GetSlot(area, room, slotnr)
+	slot.SetSlotType(scenetype[3])
+	slot.SetScenario(scenetype[5])
+
+	p := NewPacket(commands.SCENESELECT, commands.TELL, commands.SERVER, ps.pid, scenetype)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendSlotTimer(server *ServerThread, socket net.Conn, ps *Packet) {
+	timing := []byte{0, 0, 7, 8}
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+	livetime := ph.slots.GetSlot(area, room, slotnr).GetLivetime()
+
+	timing[0] = byte(slotnr) & 0xff
+	timing[2] = byte(livetime>>8) & 0xff
+	timing[3] = byte(livetime) & 0xff
+
+	p := NewPacket(commands.SLOTTIMER, commands.TELL, commands.SERVER, ps.pid, timing)
+	ph.addOutPacket(server, socket, p)
+
+	if livetime == 0 {
+		ph.broadcastGetReady(server, socket)
+	}
+}
+
+func (ph *PacketHandler) broadcastGetReady(server *ServerThread, socket net.Conn) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+	gamenr := ph.slots.GetSlot(area, room, slotnr).gamenr
+
+	// if this slot has no gamenumber, create one
+	if gamenr == 0 {
+		// create a gamesession and save it to the clients in slot
+		// used for gameserver and after game lobby
+		gamenr = ph.getNextGameNumber()
+		for _, c := range ph.clients.GetList() {
+			// TODO double check this
+			if c.area == area && c.room == room && (c.slot == slotnr || c.slot == 0) {
+				c.GameNumber = gamenr
+				ph.db.UpdateClientGame(c.userID, gamenr)
+			}
+		}
+		ph.slots.GetSlot(area, room, slotnr).gamenr = gamenr
+	}
+
+	ph.slots.GetSlot(area, room, slotnr).SetStatus(STATUS_BUSY)
+	ph.broadcastSlotStatus(server, area, room, slotnr)
+
+	p := NewPacketWithoutPayload(commands.GETREADY, commands.BROADCAST, commands.SERVER, ph.getNextPacketID())
+	ph.broadcastInSlot(server, p, area, room, slotnr)
+}
+
+func (ph *PacketHandler) broadcastInSlot(server *ServerThread, p *Packet, area, room, slot int) {
+	cls := ph.clients.GetList()
+	for _, cl := range cls {
+		if cl.area == area && cl.room == room && cl.slot == slot {
+			ph.addOutPacket(server, cl.socket, p)
+		}
+	}
+}
+
+func (ph *PacketHandler) send6412(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0,1; 0,0,0,0
+	answer := []byte{0, 1, 0, 0, 0, 0}
+	nr := ps.GetNumber()
+	answer[1] = byte(nr) & 0xff
+	p := NewPacket(commands.UNKN6412, commands.TELL, commands.SERVER, ps.pid, answer)
+	ph.addOutPacket(server, socket, p)
+}
+
+// last packet from slot creator !!
+func (ph *PacketHandler) send6504(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+
+	retval := []byte{1}
+
+	// just in case
+	retval[0] = ps.pay[0]
+
+	// set usage and playerstatus
+
+	if cl.host == 1 {
+		ph.slots.GetSlot(area, room, slotnr).SetStatus(STATUS_GAMESET)
+		ph.slots.GetSlot(area, room, slotnr).SetLivetime()
+	}
+
+	ph.broadcastSlotPlayerStatus(server, area, room, slotnr)
+	ph.broadcastPasswdProtect(server, area, room, slotnr)
+	ph.broadcastSlotSceneType(server, area, room, slotnr)
+	ph.broadcastSlotAttrib2(server, area, room, slotnr)
+	ph.broadcastSlotStatus(server, area, room, slotnr)	
+	ph.broadcastPlayerOK(server, socket)
+
+	p := NewPacket(commands.UNKN6504, commands.TELL, commands.SERVER, ps.pid, retval)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) broadcastPasswdProtect(server *ServerThread, area, room, slot int) {
+	// 0,1; 0
+	retval := []byte{0, 1, 0}
+	retval[0] = byte(slot>>8) & 0xff
+	retval[1] = byte(slot) & 0xff
+	retval[2] = ph.slots.GetProtection(area, room, slot)
+	p := NewPacket(commands.SLOTPWDPROT, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), retval)
+	ph.broadcastInRoom(server, p, area, room, slot)
+}
+
+func (ph *PacketHandler) broadcastPlayerOK(server *ServerThread, socket net.Conn) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+
+	// 0,0; 0,0
+	playerok := []byte{0, 0, 0, 0}
+	playerok[1] = cl.player
+	p := NewPacket(commands.PLAYEROK, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), playerok)
+	ph.broadcastInSlot(server, p, area, room, slotnr)
+}
+
+
 /* 3/17 - this function is currently broken, or maybe
 it's one of the functions it's calling, or maybe it's
 responding to a bad packet or something. who knows...
@@ -1106,6 +1416,18 @@ func (ph *PacketHandler) broadcastInSlotNRoom(server *ServerThread, p *Packet, a
 		}
 	}
 }
+
+func (ph *PacketHandler) broadcastInRoom(server *ServerThread, p *Packet, area, room, slot int) {
+	cls := ph.clients.GetList()
+	for _, cl := range cls {
+		if cl.area == area && cl.room == room && cl.slot == slot {
+			ph.addOutPacket(server, cl.socket, p)
+		}
+	}
+}
+
+
+
 
 func (ph *PacketHandler) broadcastSlotStatus(server *ServerThread, area, room, slot int) {
 	// 0x00,0x00; 0x00

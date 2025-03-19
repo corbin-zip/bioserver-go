@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"bytes"
+	"encoding/binary"
 )
 
 type ClientList struct {
@@ -86,4 +88,34 @@ func (cl *ClientList) CountPlayersInRoom(area int, room int) int {
 		}
 	}
 	return count
+}
+
+func (cl *ClientList) GetPlayerStats(area, room, slotnr int) []byte {
+    retval := make([]byte, 1024)
+    playercnt := byte(cl.CountPlayersInSlot(area, room, slotnr) & 0xff)
+    
+    // Create a buffer to write the data
+    buffer := bytes.NewBuffer(retval[:0])
+    
+    // Write slotnr as a short (2 bytes)
+    binary.Write(buffer, binary.BigEndian, uint16(slotnr))
+    
+    // Write the constant byte 3; TODO why ???
+    buffer.WriteByte(3)
+    
+    // Write the player count
+    buffer.WriteByte(playercnt)
+    
+    // Iterate over clients and add their stats to the buffer
+    for _, client := range cl.clients {
+        if client.area == area && client.room == room && client.slot == slotnr {
+            buffer.Write(client.hnPair.GetHNPair())
+            characterStats := client.characterStats
+            binary.Write(buffer, binary.BigEndian, uint16(len(characterStats)))
+            buffer.Write(characterStats)
+        }
+    }
+    
+    // Return the slice of the buffer's bytes
+    return buffer.Bytes()
 }

@@ -6,7 +6,7 @@ type Client struct {
 	socket         net.Conn
 	userID         string
 	session        string
-	characterStats [208]byte //0xd0 in len; TODO: make this a struct?
+	characterStats []byte //0xd0 in len; TODO: make this a struct?
 	character      int16
 	costume        int16
 	area           int //special case 51 = post-game lobby

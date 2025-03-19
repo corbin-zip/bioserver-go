@@ -127,3 +127,14 @@ func (p *Packet) GetDecryptedHNPair() *HNPair {
 func (p *Packet) GetNumber() int {
 	return int(uint16((p.pay[0])<<8) | uint16(p.pay[1]))
 }
+
+func (p *Packet) GetDecryptedString() []byte {
+	length := ((int(p.pay[0]) << 8) | int(p.pay[1])) - 2 // skip the sum
+	for i := 0; i < length; i++ {
+		p.pay[4+i] = byte(p.pay[4+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
+	}
+
+	retval := make([]byte, length)
+	copy(retval, p.pay[4:4+length])
+	return retval
+}
