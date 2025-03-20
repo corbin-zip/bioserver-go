@@ -7,6 +7,11 @@ import (
 	"log"
 	"main/commands"
 	"net"
+	"os"
+
+	// "time"
+	"path/filepath"
+	"runtime"
 )
 
 const (
@@ -26,6 +31,7 @@ type PacketHandler struct {
 	areas                   *Areas
 	rooms                   *Rooms
 	slots                   *Slots
+	logger                  *log.Logger
 	// rules                   *RuleSet
 }
 
@@ -39,8 +45,28 @@ func NewPacketHandler() *PacketHandler {
 	ph.areas = NewAreas()
 	ph.rooms = NewRooms(ph.areas.GetAreaCount())
 	ph.slots = NewSlots(ph.areas.GetAreaCount(), ph.rooms.GetRoomCount())
+	ph.logger = log.New(os.Stdout, "", log.Ltime)
 	// ph.rules = NewRuleSet()
 	return ph
+}
+
+func (ph *PacketHandler) debug(format string, v ...interface{}) {
+	pc, file, line, ok := runtime.Caller(2)
+	if !ok {
+		file = "???"
+		line = 0
+	}
+	fn := runtime.FuncForPC(pc)
+	var funcName string
+	if fn != nil {
+		funcName = fn.Name()
+	} else {
+		funcName = "???"
+	}
+	file = filepath.Base(file)
+	msg := fmt.Sprintf(format, v...)
+
+	ph.logger.Printf("%s:%d %s() %s", file, line, funcName, msg)
 }
 
 func (ph *PacketHandler) Run() {
@@ -106,7 +132,8 @@ func (ph *PacketHandler) getNextGameNumber() int {
 }
 
 func (ph *PacketHandler) addOutPacket(server *ServerThread, socket net.Conn, p *Packet) {
-	fmt.Printf("PacketHandler addOutPacket() 0x%X - who: %s cmd: %s qsw: %s\n", p.cmd, commands.GetConstName(p.who), commands.GetConstName(p.cmd), commands.GetConstName(p.qsw))
+	// ph.debug("PacketHandler addOutPacket() 0x%X - who: %s cmd: %s qsw: %s\n", p.cmd, commands.GetConstName(p.who), commands.GetConstName(p.cmd), commands.GetConstName(p.qsw))
+	ph.debug("0x%X - who: %s cmd: %s qsw: %s\n", p.cmd, commands.GetConstName(p.who), commands.GetConstName(p.cmd), commands.GetConstName(p.qsw))
 
 	event := ServerDataEvent{
 		server: server,
@@ -116,7 +143,7 @@ func (ph *PacketHandler) addOutPacket(server *ServerThread, socket net.Conn, p *
 	select {
 	case ph.queue <- event:
 	default:
-		fmt.Println("PacketHandler addOutPacket() PacketHandler queue full")
+		ph.debug("PacketHandler queue full\n")
 	}
 
 }
@@ -127,7 +154,7 @@ func (ph *PacketHandler) ProcessData(server *ServerThread, socket net.Conn, data
 
 	for remaining > 0 {
 		if remaining < HEADER_SIZE {
-			fmt.Printf("PacketHandler ProcessData() Incomplete packet: %d bytes remaining\n", remaining)
+			ph.debug("Incomplete packet: %d bytes remaining\n", remaining)
 			break // or handle error
 		}
 
@@ -136,13 +163,13 @@ func (ph *PacketHandler) ProcessData(server *ServerThread, socket net.Conn, data
 		pLen := int(data[offset+4])<<8 | int(data[offset+5])
 		packetSize := HEADER_SIZE + pLen
 		if remaining < packetSize {
-			fmt.Printf("PacketHandler ProcessData() Incomplete packet: %d bytes remaining\n", remaining)
+			ph.debug("Incomplete packet: %d bytes remaining\n", remaining)
 			break // incomplete packet; wait for more data
 		}
 		packetData := data[offset : offset+packetSize]
 		p := NewPacketFromBytes(packetData)
 
-		// fmt.Printf("PacketHandler ProcessData() - In cmd: 0x%X (%s)\n", p.cmd, commands.GetConstName(p.cmd))
+		// ph.debug("PacketHandler ProcessData() - In cmd: 0x%X (%s)\n", p.cmd, commands.GetConstName(p.cmd))
 		// if p.cmd == commands.LOGIN && ph.clients.FindClientBySocket(socket) != nil {
 		// fmt.Println("PacketHandler ProcessData() Dropping duplicate login packet")
 		// } else {
@@ -152,14 +179,15 @@ func (ph *PacketHandler) ProcessData(server *ServerThread, socket net.Conn, data
 		offset += packetSize
 		remaining -= packetSize
 
-		// fmt.Printf("PacketHandler ProcessData() %p: Processed packet of size %d, remaining: %d\n", socket, packetSize, remaining)
+		// ph.debug("PacketHandler ProcessData() %p: Processed packet of size %d, remaining: %d\n", socket, packetSize, remaining)
 	}
 
 }
 
 func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, packet *Packet) {
 	p := packet
-	fmt.Printf("PacketHandler HandleInPacket() 0x%X - who: %s cmd: %s qsw: %s\n", p.cmd, commands.GetConstName(p.who), commands.GetConstName(p.cmd), commands.GetConstName(p.qsw))
+	// ph.debug("PacketHandler HandleInPacket() 0x%X - who: %s cmd: %s qsw: %s\n", p.cmd, commands.GetConstName(p.who), commands.GetConstName(p.cmd), commands.GetConstName(p.qsw))
+	ph.debug("0x%X - who: %s cmd: %s qsw: %s\n", p.cmd, commands.GetConstName(p.who), commands.GetConstName(p.cmd), commands.GetConstName(p.qsw))
 
 	switch packet.who {
 	case commands.CLIENT:
@@ -290,8 +318,8 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			// 	ph.sendAGLplayerCnt(server, socket, packet)
 			// case commands.LEAVEAGL:
 			// 	ph.sendLeaveAGL(server, socket, packet)
-			// case commands.JOINGAME:
-			// 	ph.sendJoinGame(server, socket, packet)
+			case commands.JOINGAME:
+				ph.sendJoinGame(server, socket, packet)
 			// case commands.GETINFO:
 			// 	ph.sendGetInfo(server, socket, packet)
 			// case commands.EVENTDAT:
@@ -307,7 +335,7 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			// case commands.LOGOUT:
 			// 	ph.sendLogout(server, socket, packet)
 			default:
-				fmt.Printf("PacketHandler HandleInPacket() Unknown or unimplemented command on query: 0x%X (%s)\n", packet.cmd, commands.GetConstName(packet.cmd))
+				ph.debug("Unknown or unimplemented command on query: 0x%X (%s)\n", packet.cmd, commands.GetConstName(packet.cmd))
 			}
 		case commands.TELL:
 			switch packet.cmd {
@@ -318,17 +346,17 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			//     }
 			case commands.LOGIN:
 				if ph.checkSession(server, socket, packet) {
-					fmt.Printf("PacketHandler HandleInPacket() Session check passed!\n")
+					ph.debug("Session check passed!\n")
 					// correct session established
 					// next step is the version check for File#1 updates
 					ph.sendVersionCheck(server, socket)
 				} else {
-					fmt.Println("PacketHandler HandleInPacket() Session check failed!")
+					ph.debug("Session check failed!")
 				}
 			case commands.CHECKVERSION:
 				if ph.checkPatchLevel(server, socket, packet) {
 					// if version is older than actual patch, send patch
-					fmt.Println("PacketHandler HandleInPacket() literally never reaches here....")
+					ph.debug("literally never reaches here....")
 					// ph.beginPatch(server, socket)
 				} else {
 					// next step is to offer the registered handle/name pairs
@@ -339,7 +367,7 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			// case commands.PATCHFINISH:
 			//     sendShutdown(server, socket)
 			default:
-				fmt.Printf("PacketHandler HandleInPacket() Unknown command on answer: %d (0x%X)\n", packet.cmd, packet.cmd)
+				ph.debug("Unknown command on answer: %d (0x%X)\n", packet.cmd, packet.cmd)
 			}
 		case commands.BROADCAST:
 			switch packet.cmd {
@@ -348,10 +376,10 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			// case commands.CHATIN:
 			//     broadcastChatOut(server, socket, packet)
 			default:
-				fmt.Printf("PacketHandler HandleInPacket() Unknown command on broadcast: %d (0x%X)\n", packet.cmd, packet.cmd)
+				ph.debug("Unknown command on broadcast: %d (0x%X)\n", packet.cmd, packet.cmd)
 			}
 		default:
-			fmt.Printf("PacketHandler HandleInPacket() Unknown qsw type on incoming packet! 0x%X\n", packet.qsw)
+			ph.debug("Unknown qsw type on incoming packet! 0x%X\n", packet.qsw)
 		}
 	default:
 		fmt.Println("PacketHandler HandleInPacket() Not a client who on incoming packet!")
@@ -379,11 +407,11 @@ func (ph *PacketHandler) checkSession(server *ServerThread, socket net.Conn, p *
 
 	userid, err := ph.db.GetUserID(session)
 	if err != nil {
-		fmt.Println("PacketHandler checkSession() Error getting user id:", err)
+		ph.debug("PacketHandler checkSession() Error getting user id:%v\n", err)
 		return false
 	}
 
-	fmt.Printf("PacketHandler checkSession() Session: %s with UserID: %s\n", session, userid)
+	ph.debug("Session: %s with UserID: %s\n", session, userid)
 
 	if userid != "" {
 		// loop through clients and remove old connections
@@ -391,11 +419,10 @@ func (ph *PacketHandler) checkSession(server *ServerThread, socket net.Conn, p *
 		// TODO: (should this be implemented by clients.go instead?)
 		cl := ph.clients.FindClientByUserID(userid)
 		if cl != nil {
-			fmt.Printf("PacketHandler checkSession() Found a client with UserID %s: %v\n", userid, cl)
-			fmt.Println("PacketHandler checkSession() TODO looping through clients to remove old connections...")
+			ph.debug("Found a client with UserID %s: %v\n", userid, cl)
 			for _, c := range ph.clients.GetList() {
 				if c.userID == userid {
-					fmt.Printf("PacketHandler checkSession() removing client with UserID %s & socket %p\n", userid, c.socket)
+					ph.debug("removing client with UserID %s & socket %p\n", userid, c.socket)
 					ph.removeClient(server, c)
 				}
 			}
@@ -450,9 +477,9 @@ func (ph *PacketHandler) checkPatchLevel(server *ServerThread, socket net.Conn, 
 	// for testing just get the version string and dump the packet
 
 	packetData := p.GetPacketData()
-	fmt.Printf("PacketHandler checkPatchLevel() Packet data: %v\n", packetData)
+	ph.debug("Packet data: %+v\n", packetData)
 	version := p.GetVersion()
-	fmt.Printf("PacketHandler checkPatchLevel() Decrypted client version: %s\n", version)
+	ph.debug("Decrypted client version: %s\n", version)
 
 	// check if the client has the latest patch level
 	// if not, send patch
@@ -465,7 +492,7 @@ func (ph *PacketHandler) sendIDHNPairs(server *ServerThread, socket net.Conn) {
 
 	hn := ph.db.GetHNPairs(userid)
 
-	fmt.Printf("PacketHandler sendIDHNPairs() Sending HNPairs: %v\n", hn)
+	ph.debug("Sending HNPairs: %v\n", hn)
 
 	pk := NewPacket(commands.IDHNPAIRS, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), hn.GetArray())
 	ph.addOutPacket(server, socket, pk)
@@ -500,7 +527,7 @@ func (ph *PacketHandler) sendHNSelect(server *ServerThread, socket net.Conn, ps 
 	userid := ph.clients.FindClientBySocket(socket).userID
 	gamenr, err := ph.db.GetGameNumber(userid)
 	if err != nil {
-		fmt.Printf("Error getting game number for userid %s: %v\n", userid, err)
+		ph.debug("Error getting game number for userid %s: %v\n", userid, err)
 	}
 
 	// ask for info if user is coming from a game
@@ -519,11 +546,15 @@ func (ph *PacketHandler) sendMotheday(server *ServerThread, socket net.Conn, p *
 	// message, err := ph.db.GetMOTD()
 	// if err != nil {
 	// 	message = "error getting motd..."
-	// 	fmt.Printf("Failed to get MOTD: %v\n", err)
+	// 	ph.debug("Failed to get MOTD: %v\n", err)
 	// }
 	// TODO testing
+	// TODO note to self: ip.addr == 192.168.1.135 and not ssh and data.data contains 61:4C
+	// should be 1 byte number (1 apparently), 2 byte length (only of motd apparently), then motd
+	// -- this all lines up but it's not showing in the game. if it works on obsrv then we can
+	// capture the packets and compare them to see what's different
 	message := "nomotd"
-	fmt.Printf("PacketHandler sendMotheday() sending MOTD message: %s\n", message)
+	ph.debug("sending MOTD message: %s\n", message)
 	motd := NewMOTD(1, message)
 	motdp := NewPacket(commands.MOTHEDAY, commands.TELL, commands.SERVER, p.pid, motd.GetPacket())
 	ph.addOutPacket(server, socket, motdp)
@@ -1202,8 +1233,8 @@ func (ph *PacketHandler) sendSceneSelect(server *ServerThread, socket net.Conn, 
 	slotnr := cl.slot
 
 	scenetype[1] = byte(slotnr) & 0xff // slot
-	scenetype[3] = ps.pay[1] // type
-	scenetype[5] = ps.pay[3] // scenario
+	scenetype[3] = ps.pay[1]           // type
+	scenetype[5] = ps.pay[3]           // scenario
 
 	slot := ph.slots.GetSlot(area, room, slotnr)
 	slot.SetSlotType(scenetype[3])
@@ -1303,13 +1334,81 @@ func (ph *PacketHandler) send6504(server *ServerThread, socket net.Conn, ps *Pac
 	ph.broadcastPasswdProtect(server, area, room, slotnr)
 	ph.broadcastSlotSceneType(server, area, room, slotnr)
 	ph.broadcastSlotAttrib2(server, area, room, slotnr)
-	ph.broadcastSlotStatus(server, area, room, slotnr)	
+	ph.broadcastSlotStatus(server, area, room, slotnr)
 	ph.broadcastPlayerOK(server, socket)
 
 	p := NewPacket(commands.UNKN6504, commands.TELL, commands.SERVER, ps.pid, retval)
 	ph.addOutPacket(server, socket, p)
 }
 
+func (ph *PacketHandler) sendJoinGame(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+
+	retslot := []byte{0, 0}
+	slotnr := ps.GetNumber()
+
+	// check if slot is free
+	if ph.slots.GetStatus(area, room, slotnr) == STATUS_BUSY {
+		mess := NewPacketString("<LF=6><BODY><CENTER>game is full<END>").GetData()
+		p := NewPacket(commands.JOINGAME, commands.TELL, commands.SERVER, ps.pid, mess)
+		p.SetErr()
+		ph.addOutPacket(server, socket, p)
+		return
+	}
+
+	slot := ph.slots.GetSlot(area, room, slotnr)
+
+	// check if we can join the slot
+	if ph.slots.GetSlot(area, room, slotnr).GetStatus() != STATUS_GAMESET {
+		mess := NewPacketString("<LF=6><BODY><CENTER>not possible<END>").GetData()
+		p := NewPacket(commands.JOINGAME, commands.TELL, commands.SERVER, ps.pid, mess)
+		p.SetErr()
+		ph.addOutPacket(server, socket, p)
+		return
+	}
+
+	// hostuser := ph.slots.GetSlot(area, room, slotnr).GetHost()
+	// clntuser := cl.userID
+
+	// get password, check it
+	pass := ps.GetPassword()
+	if bytes.Equal(pass, slot.GetPassword()) || slot.GetProtection() == PROTECTION_OFF {
+		retslot[1] = byte(slotnr) & 0xff
+
+		// assign a player number, set slot
+		player := ph.clients.GetFreePlayerNum(area, room, slotnr)
+		cl.slot = slotnr
+		cl.player = byte(player)
+		ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, area, room, slotnr)
+
+		p := NewPacket(commands.JOINGAME, commands.TELL, commands.SERVER, ps.pid, retslot)
+		ph.addOutPacket(server, socket, p)
+
+		n := ph.clients.CountPlayersInSlot(area, room, slotnr)
+		if n >= int(ph.slots.GetMaximumPlayers(area, room, slotnr)) {
+			ph.slots.GetSlot(area, room, slotnr).SetStatus(STATUS_BUSY)
+		}
+
+		ph.broadcastSlotPlayerStatus(server, area, room, slotnr)
+		ph.broadcastSlotStatus(server, area, room, slotnr)
+		ph.broadcastSlotAttrib2(server, area, room, slotnr)
+
+		// broadcast stats of new player
+		status := cl.characterStats
+
+		p2 := NewPacket(commands.PLAYERSTATBC, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), status)
+
+		ph.broadcastInSlot(server, p2, area, room, slotnr)
+	} else {
+		mess := NewPacketString("<LF=6><BODY><CENTER>wrong password<END>").GetData()
+		p := NewPacket(commands.JOINGAME, commands.TELL, commands.SERVER, ps.pid, mess)
+		p.SetErr()
+		ph.addOutPacket(server, socket, p)
+	}
+
+}
 func (ph *PacketHandler) broadcastPasswdProtect(server *ServerThread, area, room, slot int) {
 	// 0,1; 0
 	retval := []byte{0, 1, 0}
@@ -1333,7 +1432,6 @@ func (ph *PacketHandler) broadcastPlayerOK(server *ServerThread, socket net.Conn
 	ph.broadcastInSlot(server, p, area, room, slotnr)
 }
 
-
 /* 3/17 - this function is currently broken, or maybe
 it's one of the functions it's calling, or maybe it's
 responding to a bad packet or something. who knows...
@@ -1350,12 +1448,14 @@ in the original java code...*/
 func (ph *PacketHandler) sendSlotStatus(server *ServerThread, socket net.Conn, ps *Packet) {
 	// 0x00,0x00; 0x00
 	slotnr := ps.GetNumber()
-	fmt.Printf("PacketHandler sendSlotStatus() slotnr: %d\n", slotnr) // Debug print
+	ph.debug("slotnr: %d\n", slotnr) // Debug print
 	slotstatus := []byte{0x00, 0x00, 0x00}
 	cl := ph.clients.FindClientBySocket(socket)
 	area := cl.area
 	room := cl.room
-	fmt.Printf("PacketHandler sendSlotStatus() area: %d, room: %d\n", area, room) // Debug print
+	// TODO: selecting eg area 5 causes this to output area 0 room 5.
+	// not really clear what "area" is actually aligning with here.
+	ph.debug("area: %d, room: %d\n", area, room) // Debug print
 	slotstatus[0] = byte(slotnr>>8) & 0xff
 	slotstatus[1] = byte(slotnr) & 0xff
 	slotstatus[2] = ph.slots.GetStatus(area, room, slotnr)
@@ -1426,9 +1526,6 @@ func (ph *PacketHandler) broadcastInRoom(server *ServerThread, p *Packet, area, 
 	}
 }
 
-
-
-
 func (ph *PacketHandler) broadcastSlotStatus(server *ServerThread, area, room, slot int) {
 	// 0x00,0x00; 0x00
 	retval := []byte{0x00, 0x00, 0x00}
@@ -1443,7 +1540,7 @@ func (ph *PacketHandler) removeClient(server *ServerThread, cl *Client) {
 	if cl == nil {
 		return
 	}
-	fmt.Printf("Removing client %s\n", cl.userID)
+	ph.debug("Removing client %s\n", cl.userID)
 	// // If needed, lock the client (e.g., cl.mu.Lock(); defer cl.mu.Unlock())
 	// area := cl.area
 	// room := cl.room
@@ -1553,7 +1650,7 @@ func (ph *PacketHandler) RemoveClientNoDisconnect(server *ServerThread, socket n
 	}
 	cl.ConnAlive = false
 
-	fmt.Printf("PacketHandler RemoveClientNoDisconnect() client: %s socket: %p\n", cl.userID, socket)
+	ph.debug("client: %s socket: %p\n", cl.userID, socket)
 	// // If needed, lock the client (e.g., cl.mu.Lock(); defer cl.mu.Unlock())
 	// area := cl.area
 	// room := cl.room
@@ -1565,12 +1662,12 @@ func (ph *PacketHandler) RemoveClientNoDisconnect(server *ServerThread, socket n
 
 	// Set the client status to offline.
 	if err := ph.db.UpdateClientOrigin(cl.userID, STATUS_OFFLINE, -1, 0, 0); err != nil {
-		fmt.Println("PacketHandler RemoveClientNoDisconnect() Error updating client origin to offline:", err)
+		ph.debug("Error updating client origin to offline: %v\n", err)
 	}
 
 	// Remove the client from the list.
 	ph.clients.Remove(cl)
-	fmt.Printf("PacketHandler RemoveClientNoDisconnect() Client %s removed but kept session alive\n", cl.userID)
+	ph.debug("Client %s removed but kept session alive\n", cl.userID)
 
 	// // If the client was a host and occupying a slot, perform slot-specific broadcasts.
 	// if host == 1 && slot != 0 {

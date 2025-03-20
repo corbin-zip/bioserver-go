@@ -14,8 +14,9 @@ func (gsp *GameServerPacketHandler) Run() {
 
 // ProcessData is a stub function that prints debug information about incoming packets.
 func (gsp *GameServerPacketHandler) ProcessData(server *GameServerThread, conn net.Conn, data []byte, length int) {
-	fmt.Printf("Processing data from %s: %d bytes\n", conn.RemoteAddr(), length)
-	fmt.Printf("Raw Data: %x\n", data) // Print raw bytes in hex format
+	// ph.debug("Processing data from %s: %d bytes\n", conn.RemoteAddr(), length)
+	// ph.debug("Raw Data: %x\n", data) // Print raw bytes in hex format
+	return
 }
 
 func (gsp *GameServerPacketHandler) CountInGamePlayers() int {

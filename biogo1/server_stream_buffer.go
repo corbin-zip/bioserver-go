@@ -5,8 +5,8 @@ import (
 )
 
 const (
-	RECEIVE_SIZE       = 8192               // Maximum buffer size.
-	PACKET_HEADER_SIZE = 12                 // Size of a packet header.
+	RECEIVE_SIZE       = 8192 // Maximum buffer size.
+	PACKET_HEADER_SIZE = 12   // Size of a packet header.
 )
 
 // ServerStreamBuffer manages incoming data using a fixed-size array.
@@ -113,7 +113,7 @@ func (s *ServerStreamBuffer) GetCompleteMessages() []byte {
 // 		// Not enough data for even a header.
 // 		return nil
 // 	}
-// 	fmt.Printf("Processing buffer, size: %d, messptr: %d\n", size, s.messptr)
+// 	ph.debug("Processing buffer, size: %d, messptr: %d\n", size, s.messptr)
 
 // 	total := 0       // Total bytes that form complete messages.
 // 	remaining := size // Bytes remaining to examine.
@@ -153,7 +153,7 @@ func (s *ServerStreamBuffer) GetCompleteMessages() []byte {
 // 	} else {
 // 		// There is leftover data that does not form a complete packet.
 // 		// Shift the leftover data to the beginning of the buffer.
-// 		fmt.Printf("Shifting buffer: remaining %d bytes\n", remaining)
+// 		ph.debug("Shifting buffer: remaining %d bytes\n", remaining)
 // 		copy(s.buf[0:], s.buf[s.messptr+total:s.buflen])
 // 		s.buflen = remaining
 // 		s.messptr = 0

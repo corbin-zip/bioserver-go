@@ -3,12 +3,13 @@ package main
 import (
 	"io"
 	"log"
-	"strings"
 	"math/rand"
-	"fmt"
+	"strings"
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
+
+	"fmt"
 )
 
 type HNPair struct {
@@ -54,7 +55,7 @@ func (hnp *HNPair) CreateHandle(db *Database) {
 		}
 
 		handleCheck, err := db.CheckHandle(string(handle))
-		if (err != nil) {
+		if err != nil {
 			fmt.Printf("HNPair CreateHandle() error: %v\n", err)
 		}
 

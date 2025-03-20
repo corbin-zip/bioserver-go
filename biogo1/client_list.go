@@ -1,11 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"net"
-	"slices"
 	"bytes"
 	"encoding/binary"
+	"net"
+	"slices"
 )
 
 type ClientList struct {
@@ -17,7 +16,6 @@ func NewClientList() *ClientList {
 }
 
 func (cl *ClientList) Add(c *Client) {
-	fmt.Printf("Adding client %s\n", c.userID)
 	cl.clients = append(cl.clients, c)
 }
 
@@ -46,7 +44,7 @@ func (cl *ClientList) FindClientByUserID(userid string) *Client {
 func (cl *ClientList) Remove(c *Client) {
 	for i, client := range cl.clients {
 		if client == c {
-			cl.clients = slices.Delete(cl.clients, i, i + 1)
+			cl.clients = slices.Delete(cl.clients, i, i+1)
 			break
 		}
 	}
@@ -65,7 +63,7 @@ func (cl *ClientList) CountPlayersInSlot(area, room, slot int) int {
 func (cl *ClientList) CountPlayersInArea(nr int) []int {
 	// TODO: what is unknown 3rd value? is it ingame?
 	retval := []int{0, 0, 0}
-	
+
 	for _, c := range cl.clients {
 		if c.area == nr {
 			if c.room == 0 {
@@ -91,31 +89,46 @@ func (cl *ClientList) CountPlayersInRoom(area int, room int) int {
 }
 
 func (cl *ClientList) GetPlayerStats(area, room, slotnr int) []byte {
-    retval := make([]byte, 1024)
-    playercnt := byte(cl.CountPlayersInSlot(area, room, slotnr) & 0xff)
-    
-    // Create a buffer to write the data
-    buffer := bytes.NewBuffer(retval[:0])
-    
-    // Write slotnr as a short (2 bytes)
-    binary.Write(buffer, binary.BigEndian, uint16(slotnr))
-    
-    // Write the constant byte 3; TODO why ???
-    buffer.WriteByte(3)
-    
-    // Write the player count
-    buffer.WriteByte(playercnt)
-    
-    // Iterate over clients and add their stats to the buffer
-    for _, client := range cl.clients {
-        if client.area == area && client.room == room && client.slot == slotnr {
-            buffer.Write(client.hnPair.GetHNPair())
-            characterStats := client.characterStats
-            binary.Write(buffer, binary.BigEndian, uint16(len(characterStats)))
-            buffer.Write(characterStats)
-        }
-    }
-    
-    // Return the slice of the buffer's bytes
-    return buffer.Bytes()
+	retval := make([]byte, 1024)
+	playercnt := byte(cl.CountPlayersInSlot(area, room, slotnr) & 0xff)
+
+	// Create a buffer to write the data
+	buffer := bytes.NewBuffer(retval[:0])
+
+	// Write slotnr as a short (2 bytes)
+	binary.Write(buffer, binary.BigEndian, uint16(slotnr))
+
+	// Write the constant byte 3; TODO why ???
+	buffer.WriteByte(3)
+
+	// Write the player count
+	buffer.WriteByte(playercnt)
+
+	// Iterate over clients and add their stats to the buffer
+	for _, client := range cl.clients {
+		if client.area == area && client.room == room && client.slot == slotnr {
+			buffer.Write(client.hnPair.GetHNPair())
+			characterStats := client.characterStats
+			binary.Write(buffer, binary.BigEndian, uint16(len(characterStats)))
+			buffer.Write(characterStats)
+		}
+	}
+
+	// Return the slice of the buffer's bytes
+	return buffer.Bytes()
+}
+
+func (cl *ClientList) GetFreePlayerNum(area, room, slot int) int {
+	fpn := []byte{0, 0, 0, 0, 0}
+	for _, c := range cl.clients {
+		if c.area == area && c.room == room && c.slot == slot {
+			fpn[c.player] = 1
+		}
+	}
+	for i := 2; i < 5; i++ {
+		if fpn[i] == 0 {
+			return i
+		}
+	}
+	return 0
 }

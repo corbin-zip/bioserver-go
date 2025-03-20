@@ -138,3 +138,18 @@ func (p *Packet) GetDecryptedString() []byte {
 	copy(retval, p.pay[4:4+length])
 	return retval
 }
+
+func (p *Packet) SetErr() {
+	p.err = 0xff
+}
+
+func (p *Packet) GetPassword() []byte {
+	length := ((int(p.pay[2]) << 8) | int(p.pay[3])) - 2 // skip the sum
+	for i := 0; i < length; i++ {
+		p.pay[6+i] = byte(p.pay[6+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
+	}
+
+	retval := make([]byte, length)
+	copy(retval, p.pay[6:6+length])
+	return retval
+}

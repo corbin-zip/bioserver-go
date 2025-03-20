@@ -158,7 +158,8 @@ func (g *GameServerThread) close(conn net.Conn) {
 	delete(g.pendingData, conn)
 	g.mu.Unlock()
 	if g.packetHandler != nil {
-		fmt.Printf("game Removing client %s\n", conn.RemoteAddr())
+		// ph.debug("game Removing client %s\n", conn.RemoteAddr())
 		// g.packetHandler.removeClientNoDisconnect(g, conn)
+		return
 	}
 }
