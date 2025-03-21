@@ -41,6 +41,15 @@ func (cl *ClientList) FindClientByUserID(userid string) *Client {
 	return nil
 }
 
+func (cl *ClientList) FindClientBySlot(area, room, slot, player int) *Client {
+	for _, c := range cl.clients {
+		if c.area == area && c.room == room && c.slot == slot && c.player == byte(player) {
+			return c
+		}
+	}
+	return nil
+}
+
 func (cl *ClientList) Remove(c *Client) {
 	for i, client := range cl.clients {
 		if client == c {

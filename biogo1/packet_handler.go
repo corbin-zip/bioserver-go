@@ -32,6 +32,7 @@ type PacketHandler struct {
 	rooms                   *Rooms
 	slots                   *Slots
 	logger                  *log.Logger
+	information             *Information
 	// rules                   *RuleSet
 }
 
@@ -46,6 +47,7 @@ func NewPacketHandler() *PacketHandler {
 	ph.rooms = NewRooms(ph.areas.GetAreaCount())
 	ph.slots = NewSlots(ph.areas.GetAreaCount(), ph.rooms.GetRoomCount())
 	ph.logger = log.New(os.Stdout, "", log.Ltime)
+	ph.information = NewInformation()
 	// ph.rules = NewRuleSet()
 	return ph
 }
@@ -292,18 +294,18 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 				ph.send6412(server, socket, packet)
 			case 0x6504:
 				ph.send6504(server, socket, packet)
-			// case commands.CANCELSLOT:
-			// 	ph.sendCancelSlot(server, socket, packet)
-			// case commands.SLOTPASSWD:
-			// 	ph.sendSlotPasswd(server, socket, packet)
-			// case commands.PLAYERCOUNT:
-			// 	ph.sendPlayerCount(server, socket, packet)
-			// case commands.PLAYERNUMBER:
-			// 	ph.sendPlayerNumber(server, socket, packet)
-			// case commands.PLAYERSTAT:
-			// 	ph.sendPlayerStat(server, socket, packet)
-			// case commands.PLAYERSCORE:
-			// 	ph.sendPlayerScore(server, socket, packet)
+			case commands.CANCELSLOT:
+				ph.sendCancelSlot(server, socket, packet)
+			case commands.SLOTPASSWD:
+				ph.sendSlotPasswd(server, socket, packet)
+			case commands.PLAYERCOUNT:
+				ph.sendPlayerCount(server, socket, packet)
+			case commands.PLAYERNUMBER:
+				ph.sendPlayerNumber(server, socket, packet)
+			case commands.PLAYERSTAT:
+				ph.sendPlayerStat(server, socket, packet)
+			case commands.PLAYERSCORE:
+				ph.sendPlayerScore(server, socket, packet)
 			// case commands.GAMESESSION:
 			// 	ph.sendGameSession(server, socket, packet)
 			// case commands.GAMEDIFF:
@@ -320,8 +322,8 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			// 	ph.sendLeaveAGL(server, socket, packet)
 			case commands.JOINGAME:
 				ph.sendJoinGame(server, socket, packet)
-			// case commands.GETINFO:
-			// 	ph.sendGetInfo(server, socket, packet)
+			case commands.GETINFO:
+				ph.sendGetInfo(server, socket, packet)
 			// case commands.EVENTDAT:
 			// 	ph.sendEventDat(server, socket, packet)
 			// case commands.BUDDYLIST:
@@ -330,8 +332,8 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			// 	ph.sendCheckBuddy(server, socket, packet)
 			// case commands.PRIVATEMSG:
 			// 	ph.sendPrivateMsg(server, socket, packet)
-			// case commands.UNKN6181:
-			// 	ph.send6181(server, socket, packet)
+			case commands.UNKN6181:
+				ph.send6181(server, socket, packet)
 			// case commands.LOGOUT:
 			// 	ph.sendLogout(server, socket, packet)
 			default:
@@ -553,7 +555,7 @@ func (ph *PacketHandler) sendMotheday(server *ServerThread, socket net.Conn, p *
 	// should be 1 byte number (1 apparently), 2 byte length (only of motd apparently), then motd
 	// -- this all lines up but it's not showing in the game. if it works on obsrv then we can
 	// capture the packets and compare them to see what's different
-	message := "nomotd"
+	message := "<LF=6><BODY><CENTER>AAAAA HHHHHHH<END>"
 	ph.debug("sending MOTD message: %s\n", message)
 	motd := NewMOTD(1, message)
 	motdp := NewPacket(commands.MOTHEDAY, commands.TELL, commands.SERVER, p.pid, motd.GetPacket())
@@ -1461,6 +1463,145 @@ func (ph *PacketHandler) sendSlotStatus(server *ServerThread, socket net.Conn, p
 	slotstatus[2] = ph.slots.GetStatus(area, room, slotnr)
 	p := NewPacket(commands.SLOTSTATUS, commands.TELL, commands.SERVER, ps.pid, slotstatus)
 	ph.addOutPacket(server, socket, p)
+}
+
+// this is send when a client gets the rules but decides not to join
+// also when a host decides not to create a gameslot
+// AND when client or host leave the set gameslot
+func (ph *PacketHandler) sendCancelSlot(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+	ishost := cl.host
+
+	// game creation is canceled
+	// reset slot and leave it
+	if ishost == 1 {
+		cl.host = 0
+		ph.slots.GetSlot(area, room, slotnr).Reset()
+		ph.broadcastCancelSlot(server, area, room, slotnr)
+		ph.broadcastPasswdProtect(server, area, room, slotnr)
+		ph.broadcastSlotSceneType(server, area, room, slotnr)
+		ph.broadcastSlotTitle(server, area, room, slotnr)
+	}
+
+	// normal players just leave
+	ph.broadcastLeaveSlot(server, socket)
+	cl.player = 0
+	cl.slot = 0
+	ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, area, room, 0)
+
+	ph.broadcastSlotAttrib2(server, area, room, slotnr)
+
+	// set status back to let others in
+	n := ph.clients.CountPlayersInSlot(area, room, slotnr)
+	if (n < int(ph.slots.GetMaximumPlayers(area, room, slotnr))) && ishost == 0 {
+		ph.slots.GetSlot(area, room, slotnr).SetStatus(STATUS_GAMESET)
+	}
+
+	ph.broadcastSlotPlayerStatus(server, area, room, slotnr)
+	ph.broadcastSlotStatus(server, area, room, slotnr)
+
+	p := NewPacketWithoutPayload(commands.CANCELSLOT, commands.TELL, commands.SERVER, ps.pid)
+	ph.addOutPacket(server, socket, p)
+
+}
+
+func (ph *PacketHandler) broadcastLeaveSlot(server *ServerThread, socket net.Conn) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+
+	// 0,6; 0,0,0,0,0,0
+	wholeaves := []byte{0, 6, 0, 0, 0, 0, 0, 0}
+	who := cl.hnPair.handle
+
+	copy(wholeaves[2:], who)
+	p := NewPacket(commands.LEAVESLOT, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), wholeaves)
+	ph.broadcastInSlot(server, p, area, room, slotnr)
+
+}
+
+func (ph *PacketHandler) broadcastCancelSlot(server *ServerThread, area, room, slot int) {
+	mess := NewPacketString("<LF=6><BODY><CENTER>host cancelled game<END>").GetData()
+	p := NewPacket(commands.CANCELSLOTBC, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), mess)
+	ph.broadcastInSlot(server, p, area, room, slot)
+}
+
+func (ph *PacketHandler) sendSlotPasswd(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+	slot := ph.slots.GetSlot(area, room, slotnr)
+	slot.SetPassword(ps.GetDecryptedString()) // TODO: apparently not GetDecryptedPassword()
+	p := NewPacket(commands.SLOTPASSWD, commands.TELL, commands.SERVER, ps.pid, ps.pay)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendGetInfo(server *ServerThread, socket net.Conn, ps *Packet) {
+	url := ps.GetDecryptedString()
+	d := ph.information.GetData(string(url))
+
+	mess := make([]byte, len(d)+len(url)+4)
+
+	// putShort
+	binary.BigEndian.PutUint16(mess[0:2], uint16(len(url)))
+	// put
+	copy(mess[2:2+len(url)], url)
+	off := 2 + len(url)
+	binary.BigEndian.PutUint16(mess[off:off+2], uint16(len(d)))
+	copy(mess[off+2:], d)
+
+	p := NewPacket(commands.GETINFO, commands.TELL, commands.SERVER, ps.pid, mess)
+	ph.addOutPacket(server, socket, p)
+}
+
+// unknown, simply accept it
+func (ph *PacketHandler) send6181(server *ServerThread, socket net.Conn, ps *Packet) {
+	p := NewPacketWithoutPayload(commands.UNKN6181, commands.TELL, commands.SERVER, ps.pid)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendPlayerCount(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := ps.GetNumber()
+	playercount := []byte{0}
+	playercount[0] = byte(ph.clients.CountPlayersInSlot(area, room, slotnr))
+	p := NewPacket(commands.PLAYERCOUNT, commands.TELL, commands.SERVER, ps.pid, playercount)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendPlayerNumber(server *ServerThread, socket net.Conn, ps *Packet) {
+	num := []byte{0}
+	num[0] = ph.clients.FindClientBySocket(socket).player
+	p := NewPacket(commands.PLAYERNUMBER, commands.TELL, commands.SERVER, ps.pid, num)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendPlayerStat(server *ServerThread, socket net.Conn, ps *Packet) {
+	status := []byte{0, 0}
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+	player := ps.pay[0] // query which player ?
+	cl = ph.clients.FindClientBySlot(area, room, slotnr, int(player))
+
+	if cl != nil {
+		status = cl.GetPreGameStat(player)
+	} else { // client left us :(
+		status[0] = 0 // TODO: not sure if this will help
+	}
+
+	p := NewPacket(commands.PLAYERSTAT, commands.TELL, commands.SERVER, ps.pid, status)
+	ph.addOutPacket(server, socket, p)
+}
+func (ph *PacketHandler) sendPlayerScore(server *ServerThread, socket net.Conn, ps *Packet) {
 }
 
 func (ph *PacketHandler) broadcastAreaPlayerCnt(server *ServerThread, socket net.Conn, nr int) {

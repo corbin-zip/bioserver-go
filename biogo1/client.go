@@ -1,6 +1,9 @@
 package main
 
-import "net"
+import (
+	"encoding/binary"
+	"net"
+)
 
 type Client struct {
 	socket         net.Conn
@@ -30,4 +33,31 @@ func NewClient(socket net.Conn, userID string, session string) *Client {
 		host:      0,
 		ConnAlive: true,
 	}
+}
+
+func (c *Client) GetPreGameStat(playernum byte) []byte {
+	z := make([]byte, 300)
+	off := 0
+	z[off] = playernum
+	off++
+	z[off] = 1
+	off++
+
+	hnpair := c.hnPair.GetHNPair() // GetHNPair returns []byte, per the Java version.
+	copy(z[off:], hnpair)
+	off += len(hnpair)
+
+	binary.BigEndian.PutUint16(z[off:off+2], uint16(len(c.characterStats)))
+	off += 2
+
+	copy(z[off:], c.characterStats)
+	off += len(c.characterStats)
+
+	z[off] = 0
+	off++
+	z[off] = 0
+	off++
+	z[off] = 6
+	off++
+	return z[:off]
 }
