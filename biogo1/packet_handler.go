@@ -33,6 +33,7 @@ type PacketHandler struct {
 	slots                   *Slots
 	logger                  *log.Logger
 	information             *Information
+	gsIP                    []byte
 	// rules                   *RuleSet
 }
 
@@ -48,6 +49,7 @@ func NewPacketHandler() *PacketHandler {
 	ph.slots = NewSlots(ph.areas.GetAreaCount(), ph.rooms.GetRoomCount())
 	ph.logger = log.New(os.Stdout, "", log.Ltime)
 	ph.information = NewInformation()
+	ph.gsIP = []byte{192, 168, 1, 135}
 	// ph.rules = NewRuleSet()
 	return ph
 }
@@ -306,27 +308,27 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 				ph.sendPlayerStat(server, socket, packet)
 			case commands.PLAYERSCORE:
 				ph.sendPlayerScore(server, socket, packet)
-			// case commands.GAMESESSION:
-			// 	ph.sendGameSession(server, socket, packet)
-			// case commands.GAMEDIFF:
-			// 	ph.sendDifficulty(server, socket, packet)
-			// case commands.GSINFO:
-			// 	ph.sendGSinfo(server, socket, packet)
-			// case commands.ENTERAGL:
-			// 	ph.sendEnterAGL(server, socket, packet)
-			// case commands.AGLSTATS:
-			// 	ph.sendAGLstats(server, socket, packet)
-			// case commands.AGLPLAYERCNT:
-			// 	ph.sendAGLplayerCnt(server, socket, packet)
-			// case commands.LEAVEAGL:
-			// 	ph.sendLeaveAGL(server, socket, packet)
+			case commands.GAMESESSION:
+				ph.sendGameSession(server, socket, packet)
+			case commands.GAMEDIFF:
+				ph.sendDifficulty(server, socket, packet)
+			case commands.GSINFO:
+				ph.sendGSinfo(server, socket, packet)
+			case commands.ENTERAGL:
+				ph.sendEnterAGL(server, socket, packet)
+			case commands.AGLSTATS:
+				ph.sendAGLstats(server, socket, packet)
+			case commands.AGLPLAYERCNT:
+				ph.sendAGLplayerCnt(server, socket, packet)
+			case commands.LEAVEAGL:
+				ph.sendLeaveAGL(server, socket, packet)
 			case commands.JOINGAME:
 				ph.sendJoinGame(server, socket, packet)
 			case commands.GETINFO:
 				ph.sendGetInfo(server, socket, packet)
-			// case commands.EVENTDAT:
-			// 	ph.sendEventDat(server, socket, packet)
-			// case commands.BUDDYLIST:
+			case commands.EVENTDAT:
+				ph.sendEventDat(server, socket, packet)
+			case commands.BUDDYLIST:
 			// 	ph.sendBuddyList(server, socket, packet)
 			// case commands.CHECKBUDDY:
 			// 	ph.sendCheckBuddy(server, socket, packet)
@@ -334,8 +336,8 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			// 	ph.sendPrivateMsg(server, socket, packet)
 			case commands.UNKN6181:
 				ph.send6181(server, socket, packet)
-			// case commands.LOGOUT:
-			// 	ph.sendLogout(server, socket, packet)
+			case commands.LOGOUT:
+				ph.sendLogout(server, socket, packet)
 			default:
 				ph.debug("Unknown or unimplemented command on query: 0x%X (%s)\n", packet.cmd, commands.GetConstName(packet.cmd))
 			}
@@ -545,17 +547,15 @@ func (ph *PacketHandler) sendHNSelect(server *ServerThread, socket net.Conn, ps 
 }
 
 func (ph *PacketHandler) sendMotheday(server *ServerThread, socket net.Conn, p *Packet) {
-	// message, err := ph.db.GetMOTD()
-	// if err != nil {
-	// 	message = "error getting motd..."
-	// 	ph.debug("Failed to get MOTD: %v\n", err)
-	// }
-	// TODO testing
+	message, err := ph.db.GetMOTD()
+	if err != nil {
+		message = "error getting motd..."
+		ph.debug("Failed to get MOTD: %v\n", err)
+	}
 	// TODO note to self: ip.addr == 192.168.1.135 and not ssh and data.data contains 61:4C
 	// should be 1 byte number (1 apparently), 2 byte length (only of motd apparently), then motd
-	// -- this all lines up but it's not showing in the game. if it works on obsrv then we can
-	// capture the packets and compare them to see what's different
-	message := "<LF=6><BODY><CENTER>AAAAA HHHHHHH<END>"
+	// message := "<LF=6><BODY><CENTER>AAAAA HHHHHHH<END>"
+	message = fmt.Sprintf("<LF=6><BODY><CENTER>%s<END>", message)
 	ph.debug("sending MOTD message: %s\n", message)
 	motd := NewMOTD(1, message)
 	motdp := NewPacket(commands.MOTHEDAY, commands.TELL, commands.SERVER, p.pid, motd.GetPacket())
@@ -1450,14 +1450,13 @@ in the original java code...*/
 func (ph *PacketHandler) sendSlotStatus(server *ServerThread, socket net.Conn, ps *Packet) {
 	// 0x00,0x00; 0x00
 	slotnr := ps.GetNumber()
-	ph.debug("slotnr: %d\n", slotnr) // Debug print
 	slotstatus := []byte{0x00, 0x00, 0x00}
 	cl := ph.clients.FindClientBySocket(socket)
 	area := cl.area
 	room := cl.room
 	// TODO: selecting eg area 5 causes this to output area 0 room 5.
 	// not really clear what "area" is actually aligning with here.
-	ph.debug("area: %d, room: %d\n", area, room) // Debug print
+	ph.debug("area: %d, room: %d, slot: %d\n", area, room, slotnr) // Debug print
 	slotstatus[0] = byte(slotnr>>8) & 0xff
 	slotstatus[1] = byte(slotnr) & 0xff
 	slotstatus[2] = ph.slots.GetStatus(area, room, slotnr)
@@ -1601,8 +1600,237 @@ func (ph *PacketHandler) sendPlayerStat(server *ServerThread, socket net.Conn, p
 	p := NewPacket(commands.PLAYERSTAT, commands.TELL, commands.SERVER, ps.pid, status)
 	ph.addOutPacket(server, socket, p)
 }
+
 func (ph *PacketHandler) sendPlayerScore(server *ServerThread, socket net.Conn, ps *Packet) {
+	score := []byte{0x01, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00}
+
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+	player := ps.pay[0]
+
+	// TESTpacket. where can i see those ?
+	r := make([]byte, (1+2)+(5*4))
+	off := 0
+	r[off] = player
+	off++
+
+	scenario := ph.slots.GetScenario(area, room, slotnr)
+	binary.BigEndian.PutUint16(r[off:off+2], uint16(scenario))
+	off += 2
+
+	binary.BigEndian.PutUint32(r[off:off+4], uint32(110))
+	off += 4
+
+	binary.BigEndian.PutUint32(r[off:off+4], uint32(220))
+	off += 4
+
+	binary.BigEndian.PutUint32(r[off:off+4], uint32(330))
+	off += 4
+
+	binary.BigEndian.PutUint32(r[off:off+4], uint32(440))
+	off += 4
+
+	binary.BigEndian.PutUint32(r[off:off+4], uint32(550))
+	off += 4
+
+	copy(score, r)
+
+	// TODO: send the scoring from ranklist for this player
+	score[0] = player
+	// score[1] = byte(scenario>>8) & 0xff
+	// score[2] = byte(scenario) & 0xff
+	p := NewPacket(commands.PLAYERSCORE, commands.TELL, commands.SERVER, ps.pid, score)
+	ph.addOutPacket(server, socket, p)
 }
+
+func (ph *PacketHandler) sendGameSession(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	gameno := cl.GameNumber
+	sess := fmt.Sprintf("%015d", gameno)
+
+	buff := make([]byte, 19)
+	off := 0
+	binary.BigEndian.PutUint16(buff[off:off+2], uint16(0x0f))
+	off += 2
+	copy(buff[off:], []byte(sess))
+	off += 15
+	binary.BigEndian.PutUint16(buff[off:off+2], uint16(0x00))
+
+	p := NewPacket(commands.GAMESESSION, commands.TELL, commands.SERVER, ps.pid, buff)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendDifficulty(server *ServerThread, socket net.Conn, ps *Packet) {
+	difficulty := []byte{0x00, 0x10,
+		0x01, 0x03, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	room := cl.room
+	slotnr := cl.slot
+
+	// TODO: here is sent more (different game modes). more tests!
+	difficulty[3] = ph.slots.GetDifficulty(area, room, slotnr)
+	difficulty[4] = ph.slots.GetFriendlyFire(area, room, slotnr)
+	p := NewPacket(commands.GAMEDIFF, commands.TELL, commands.SERVER, ps.pid, difficulty)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendLogout(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	area := cl.area
+	ph.db.UpdateClientGame(cl.userID, 0)
+	ph.removeClient(server, cl)
+
+	ph.broadcastAreaPlayerCnt(server, socket, area)
+	p := NewPacketWithoutPayload(commands.LOGOUT, commands.TELL, commands.SERVER, ps.pid)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendGSinfo(server *ServerThread, socket net.Conn, ps *Packet) {
+	// 0x00,0x04; 192,168,7,77; 0x00,0x02; 0x21; 0xF2(port)
+	// 0x00; 0x00; 0x1e; 0x00
+	gsinfo := []byte{0x00, 0x04, byte(192), byte(168), byte(7), byte(77),
+		0x00, 0x02, 0x21, byte(0xF2), // port 8690
+		0x00, 0x00, 0x1e, 0x00}
+
+	gsinfo[2] = ph.gsIP[0]
+	gsinfo[3] = ph.gsIP[1]
+	gsinfo[4] = ph.gsIP[2]
+	gsinfo[5] = ph.gsIP[3]
+
+	// todo: usage of multiple gameservers (why?)
+	p := NewPacket(commands.GSINFO, commands.TELL, commands.SERVER, ps.pid, gsinfo)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendEnterAGL(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	gamenum, err := ph.db.GetGameNumber(cl.userID)
+	if err != nil {
+		ph.debug("Error getting game number: %s\n", err)
+		return
+	}
+	cl.GameNumber = gamenum
+	cl.area = 51
+	ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, 51, cl.room, cl.slot)
+
+	p := NewPacketWithoutPayload(commands.ENTERAGL, commands.TELL, commands.SERVER, ps.pid)
+	ph.addOutPacket(server, socket, p)
+
+	ph.broadcastAglPlayerCnt(server, cl.GameNumber)
+}
+
+func (ph *PacketHandler) sendLeaveAGL(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	gamenum := cl.GameNumber
+
+	// broadcast leaving of player
+	wholeave := []byte{0, 6, 0, 0, 0, 0, 0, 0}
+	who := cl.hnPair.handle
+	copy(wholeave[2:], who)
+	p := NewPacket(commands.LEAVEAGL, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), wholeave)
+	ph.broadcastInAgl(server, p, gamenum)
+
+	// set player back into area selection
+	cl.area = 0
+	cl.GameNumber = 0
+	ph.db.UpdateClientGame(cl.userID, 0)
+	ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, 0, 0, 0)
+
+	p = NewPacketWithoutPayload(commands.LEAVEAGL, commands.TELL, commands.SERVER, ps.pid)
+	ph.addOutPacket(server, socket, p)
+
+	// broadcast new number of players in agl
+	ph.broadcastAglPlayerCnt(server, gamenum)
+
+	// TODO: this is an assumption, need to differentiate with multiple rooms
+	ph.broadcastRoomPlayerCnt(server, 1, 1)
+}
+
+func (ph *PacketHandler) sendAGLstats(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	gamenum := cl.GameNumber
+	aglstats := make([]byte, 1024)
+	off := 0
+	binary.BigEndian.PutUint16(aglstats[off:off+2], 0)
+	off += 2
+	aglstats[off] = byte(3) // unknown what this is
+	off++
+	aglstats[off] = byte(ph.clients.GetPlayerCountAgl(gamenum))
+	off++
+	for _, c := range ph.clients.GetList() {
+		if c.GameNumber == gamenum {
+			statlen := len(c.characterStats)
+			copy(aglstats[off:], c.characterStats)
+			off += statlen
+		}
+	}
+	status := aglstats[:off]
+	p := NewPacket(commands.AGLSTATS, commands.TELL, commands.SERVER, ps.pid, status)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendAGLplayerCnt(server *ServerThread, socket net.Conn, ps *Packet) {
+	cnt := []byte{0, 1}
+	cl := ph.clients.FindClientBySocket(socket)
+	cnt[1] = byte(ph.clients.GetPlayerCountAgl(cl.GameNumber))
+	p := NewPacket(commands.AGLPLAYERCNT, commands.TELL, commands.SERVER, ps.pid, cnt)
+	ph.addOutPacket(server, socket, p)
+}
+
+func (ph *PacketHandler) sendEventDat(server *ServerThread, socket net.Conn, ps *Packet) {
+	cl := ph.clients.FindClientBySocket(socket)
+	// area := cl.area
+	// room := cl.room
+	// slotnr := cl.slot
+	// game := cl.GameNumber
+
+	// 0,6; 0,0,0,0,0,0
+	rcpthandle := []byte{0, 6, 0, 0, 0, 0, 0, 0}
+	recpt := []byte{0, 0, 0, 0, 0, 0}
+	event := ps.GetEventData()
+	copy(rcpthandle[2:], event[2:8])
+	copy(recpt, event[2:8])
+
+	eventlen := (int(event[8]) << 8) + int(event[9]) & 0xff
+
+	// create the event packet: sender, eventdat, and their lengths
+	eventpacket := make([]byte, eventlen + 2 + 6 + 2)
+	off := 0
+	binary.BigEndian.PutUint16(eventpacket[off:off+2], uint16(6))
+	off += 2
+	copy(eventpacket[off:], cl.hnPair.handle)
+	off += 6
+	binary.BigEndian.PutUint16(eventpacket[off:off+2], uint16(eventlen))
+	off += 2
+	copy(eventpacket[off:], event[10:10+eventlen])
+	off += eventlen
+
+	p := NewPacket(commands.EVENTDATBC, commands.TELL, commands.SERVER, ps.pid, eventpacket)
+	rcl := ph.clients.FindClientByHandle(string(recpt))
+	if rcl != nil {
+		ph.addOutPacket(server, rcl.socket, p)
+	}
+
+	// accept event data by sending back unencrypted recipient
+	p = NewPacket(commands.EVENTDAT, commands.TELL, commands.SERVER, ps.pid, rcpthandle)
+	ph.addOutPacket(server, socket, p)
+}
+
+			// 	ph.sendEventDat(server, socket, packet)
+			// 	ph.sendBuddyList(server, socket, packet)
+			// 	ph.sendCheckBuddy(server, socket, packet)
+			// 	ph.sendPrivateMsg(server, socket, packet)
+
 
 func (ph *PacketHandler) broadcastAreaPlayerCnt(server *ServerThread, socket net.Conn, nr int) {
 	// 0,0; 0,0; 0xff,0xff; 0,0
@@ -1621,6 +1849,22 @@ func (ph *PacketHandler) broadcastAreaPlayerCnt(server *ServerThread, socket net
 
 	p := NewPacket(commands.AREAPLAYERCNT, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), areaplayercount)
 	ph.broadcastInAreaNAreaSelect(server, p, nr)
+}
+
+func (ph *PacketHandler) broadcastAglPlayerCnt(server *ServerThread, gamenr int) {
+	cnt := []byte{0, 1}
+	cnt[1] = byte(ph.clients.GetPlayerCountAgl(gamenr))
+	p := NewPacket(commands.AGLPLAYERCNT, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), cnt)
+	ph.broadcastInAgl(server, p, gamenr)
+}
+
+func (ph *PacketHandler) broadcastInAgl(server *ServerThread, p *Packet, gamenr int) {
+	cls := ph.clients.GetList()
+	for _, cl := range cls {
+		if cl.GameNumber == gamenr && cl.GameNumber > 0 {
+			ph.addOutPacket(server, cl.socket, p)
+		}
+	}
 }
 
 func (ph *PacketHandler) broadcastInAreaNAreaSelect(server *ServerThread, p *Packet, area int) {

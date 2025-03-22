@@ -118,7 +118,6 @@ func (d *Database) GetGameNumber(userid string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to get game number: %w", err)
 	}
-	fmt.Println("Returning game number:", gameNumber)
 	return gameNumber, nil
 }
 

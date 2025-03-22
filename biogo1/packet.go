@@ -1,5 +1,7 @@
 package main
 
+import "encoding/binary"
+
 const (
 	HEADER_SIZE = 12
 )
@@ -151,5 +153,34 @@ func (p *Packet) GetPassword() []byte {
 
 	retval := make([]byte, length)
 	copy(retval, p.pay[6:6+length])
+	return retval
+}
+
+func (p *Packet) GetEventData() []byte {
+	hlen := ((int(p.pay[0]) << 8) | int(p.pay[1])) - 2           // skip the sum
+	elen := ((int(p.pay[hlen+4]) << 8) | int(p.pay[hlen+5])) - 2 // skip the sum
+
+	for i := 0; i < hlen; i++ {
+		p.pay[4+i] = byte(p.pay[4+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
+	}
+
+	for i := 0; i < elen; i++ {
+		p.pay[hlen+8+i] = byte(p.pay[hlen+8+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
+	}
+
+	z := make([]byte, hlen + elen + 4)
+	off := 0
+
+	binary.BigEndian.PutUint16(z[off:], uint16(hlen))
+	off += 2
+	copy(z[off:], p.pay[4:4+hlen])
+	off += hlen
+	binary.BigEndian.PutUint16(z[off:], uint16(elen))
+	off += 2
+	copy(z[off:], p.pay[hlen+8:hlen+8+elen])
+	off += elen
+
+	retval := make([]byte, off)
+	copy(retval, z[:off])
 	return retval
 }

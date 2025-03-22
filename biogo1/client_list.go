@@ -32,6 +32,15 @@ func (cl *ClientList) FindClientBySocket(socket net.Conn) *Client {
 	return nil
 }
 
+func (cl *ClientList) FindClientByHandle(handle string) *Client {
+	for _, c := range cl.clients {
+		if string(c.hnPair.handle) == handle {
+			return c
+		}
+	}
+	return nil
+}
+
 func (cl *ClientList) FindClientByUserID(userid string) *Client {
 	for _, c := range cl.clients {
 		if c.userID == userid {
@@ -140,4 +149,14 @@ func (cl *ClientList) GetFreePlayerNum(area, room, slot int) int {
 		}
 	}
 	return 0
+}
+
+func (cl *ClientList) GetPlayerCountAgl(nr int) byte {
+	count := byte(0)
+	for _, c := range cl.clients {
+		if c.GameNumber == nr {
+			count++
+		}
+	}
+	return count
 }
