@@ -205,3 +205,47 @@ func (s *ServerStreamBuffer) GetCompleteGameMessages() []byte {
 	}
 	return retval
 }
+
+// func (s *ServerStreamBuffer) GetCompleteGameMessages() []byte {
+// 	// Check if it is a session/gameplay packet.
+// 	if s.buflen >= 2 && s.buf[0] == 0x82 && s.buf[1] == 0x02 {
+// 		retval := make([]byte, s.buflen)
+// 		copy(retval, s.buf[:s.buflen])
+// 		s.buf = s.buf[:0]
+// 		s.buflen = 0
+// 		s.messptr = 0
+// 		return retval
+// 	}
+
+// 	size := s.buflen - s.messptr
+// 	if size < 1 {
+// 		return nil
+// 	}
+// 	total := 0
+// 	// Process lobby messages where each message’s first byte indicates its length.
+// 	for size > 0 {
+// 		if s.messptr+total >= s.buflen {
+// 			break
+// 		}
+// 		plen := int(s.buf[s.messptr+total])
+// 		size -= plen
+// 		if size >= 0 {
+// 			total += plen
+// 		} else {
+// 			break
+// 		}
+// 	}
+// 	if total == 0 {
+// 		return nil
+// 	}
+// 	retval := make([]byte, total)
+// 	copy(retval, s.buf[s.messptr:s.messptr+total])
+// 	if size == 0 {
+// 		s.buf = s.buf[:0]
+// 		s.buflen = 0
+// 		s.messptr = 0
+// 	} else {
+// 		s.messptr += total
+// 	}
+// 	return retval
+// }

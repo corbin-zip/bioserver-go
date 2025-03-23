@@ -2154,6 +2154,24 @@ func (ph *PacketHandler) send6002(server *ServerThread, socket net.Conn, ps *Pac
 	ph.addOutPacket(server, socket, p)
 }
 
+// send a query to every client
+// the answer sets back the alive flag
+// if this doesn't happen the client is deleted from list
+func (ph *PacketHandler) BroadcastConnCheck(server *ServerThread) {
+	p := NewPacketWithoutPayload(commands.CONNCHECK, commands.QUERY, commands.SERVER, ph.getNextPacketID())
+	for _, cl := range ph.clients.GetList() {
+		if cl.area != 51 {
+			if cl.ConnAlive {
+				cl.ConnAlive = false
+				ph.addOutPacket(server, cl.socket, p)
+			} else {
+				ph.debug("Client %s did not respond to CONNCHECK; it's OUTTA HERE\n", cl.userID)
+				ph.removeClient(server, cl)
+			}
+		}
+	}
+}
+
 func (ph *PacketHandler) RemoveClientNoDisconnect(server *ServerThread, socket net.Conn) {
 	cl := ph.clients.FindClientBySocket(socket)
 

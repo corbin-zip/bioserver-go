@@ -125,13 +125,25 @@ func (g *GameServerThread) read(conn net.Conn) {
 			g.mu.Unlock()
 		}
 
-		msg := rb.Append(data)
+		// msg := rb.Append(data)
 
-		// if rb.Append returns a complete message (ie msg != nil)
-		// we then call g.packetHandler.processData to handle the message
+		// // if rb.Append returns a complete message (ie msg != nil)
+		// // we then call g.packetHandler.processData to handle the message
+		// if msg != nil && g.packetHandler != nil {
+		// 	g.packetHandler.ProcessData(g, conn, msg, len(msg))
+		// }
+
+		if err := rb.AppendData(data); err != nil {
+			log.Println("Buffer overflow for", conn.RemoteAddr())
+			g.close(conn)
+			return
+		}
+		// msg := rb.GetCompleteMessages()
+		msg := rb.GetCompleteGameMessages()
 		if msg != nil && g.packetHandler != nil {
 			g.packetHandler.ProcessData(g, conn, msg, len(msg))
 		}
+
 	}
 }
 

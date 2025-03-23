@@ -30,7 +30,7 @@ func (hbt *HeartBeatThread) Run() {
 		// h.gamePacketHandler.ConnCheck(h.gameServer)
 		// h.packetHandler.CheckAutoStart(h.lobbyServer)
 		if counter == 1 {
-			// h.packetHandler.BroadcastConnCheck(h.lobbyServer)
+			hbt.packetHandler.BroadcastConnCheck(hbt.lobbyServer)
 			counter = 0
 		} else {
 			counter++
