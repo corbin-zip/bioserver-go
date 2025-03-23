@@ -160,3 +160,29 @@ func (cl *ClientList) GetPlayerCountAgl(nr int) byte {
 	}
 	return count
 }
+
+func (cl *ClientList) GetClientStatus(handle []byte) byte {
+	c := cl.FindClientByHandle(string(handle))
+
+	// offline or playing
+	if c == nil {
+		return 0
+	}
+
+	// in game
+	if c.GameNumber != 0 {
+		return 3
+	}
+
+	// assume online
+	return 1
+}
+
+func (cl *ClientList) GetHostOfSlot(area, room, slot int) *Client {
+	for _, c := range cl.clients {
+		if c.area == area && c.room == room && c.slot == slot && c.host == 1 {
+			return c
+		}
+	}
+	return nil
+}

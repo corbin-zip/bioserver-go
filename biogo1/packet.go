@@ -184,3 +184,25 @@ func (p *Packet) GetEventData() []byte {
 	copy(retval, z[:off])
 	return retval
 }
+
+// decrypt a private message and create broadcast in one step
+func (p *Packet) GetDecryptedPvtMess(sender *Client) *PrivateMessage {
+	hlen := ((int(p.pay[0]) << 8) | int(p.pay[1])) - 2           // skip the sum
+	nlen := ((int(p.pay[hlen+4]) << 8) | int(p.pay[hlen+5])) - 2 // skip the sum
+
+	for i := 0; i < hlen; i++ {
+		p.pay[4+i] = byte(p.pay[4+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
+	}
+
+	for i := 0; i < nlen; i++ {
+		p.pay[hlen+8+i] = byte(p.pay[hlen+8+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
+	}
+
+	recipient := make([]byte, hlen)
+	message := make([]byte, nlen)
+
+	copy(recipient, p.pay[4:4+hlen])
+	copy(message, p.pay[hlen+8:hlen+8+nlen])
+
+	return NewPrivateMessage(sender.hnPair.handle, sender.hnPair.nickname, recipient, message)
+}

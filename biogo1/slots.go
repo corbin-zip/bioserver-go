@@ -31,7 +31,7 @@ func NewSlots(numberOfAreas, numberOfRooms int) *Slots {
 
 // calcSlotnr calculates the index into the slots slice.
 func (s *Slots) calcSlotnr(area, room, slotnr int) int {
-    return slotnr + (room * s.numberOfSlots) + (area * s.numberOfRooms * s.numberOfSlots)
+    return slotnr + (room * s.numberOfSlots) + (area * s.numberOfRooms * s.numberOfSlots) - 1
 }
 
 // GetSlot returns the Slot for the given area, room and slotnr.

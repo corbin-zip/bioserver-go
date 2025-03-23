@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"net"
+	"sync"
 )
 
 type Client struct {
@@ -20,6 +21,7 @@ type Client struct {
 	ConnAlive      bool    // set back every 60sec or be disconnected
 	host           byte    // host of a gameslot
 	hnPair         *HNPair //chosen handle/nickname
+	mu             sync.Mutex
 }
 
 func NewClient(socket net.Conn, userID string, session string) *Client {
