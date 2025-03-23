@@ -39,7 +39,8 @@ func main() {
 	go lobbyServer.Run(&wg)
 
 	// create the game server thread
-	gamePacketHandler := &GameServerPacketHandler{}
+	// gamePacketHandler := &GameServerPacketHandler{}
+	gamePacketHandler := NewGameServerPacketHandler()
 	gameServer := NewGameServerThread("192.168.1.135", GAMEPORT, gamePacketHandler)
 	wg.Add(1)
 	go gamePacketHandler.Run()

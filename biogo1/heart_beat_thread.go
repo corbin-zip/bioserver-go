@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -21,13 +20,13 @@ func NewHeartBeatThread(lobbyServer *ServerThread, packetHandler *PacketHandler,
 	}
 }
 
-func (h *HeartBeatThread) Run() {
+func (hbt *HeartBeatThread) Run() {
 	counter := 0
 	counter2 := 0
 
 	for {
-		fmt.Println("Heartbeat check running")
-		// h.packetHandler.BroadcastPing(h.lobbyServer)
+		// fmt.Println("Heartbeat check running")
+		hbt.packetHandler.BroadcastPing(hbt.lobbyServer)
 		// h.gamePacketHandler.ConnCheck(h.gameServer)
 		// h.packetHandler.CheckAutoStart(h.lobbyServer)
 		if counter == 1 {
@@ -44,7 +43,6 @@ func (h *HeartBeatThread) Run() {
 			counter2++
 		}
 
-		// time.Sleep(30 * time.Second) // Simulate keepalive ping
-		time.Sleep(60 * time.Second) // Simulate keepalive ping
+		time.Sleep(30 * time.Second) // Simulate keepalive ping
 	}
 }

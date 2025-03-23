@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"net"
 	"sync"
@@ -62,4 +63,20 @@ func (c *Client) GetPreGameStat(playernum byte) []byte {
 	z[off] = 6
 	off++
 	return z[:off]
+}
+
+// TODO: doubelcheck the masking on this ...
+func (c *Client) SetCharacterStats(charstats []byte) {
+	c.characterStats = charstats
+	c.character = int16(charstats[0xc8]&0xff) + int16((8*charstats[0xca])&0xff)
+	c.costume = int16(charstats[0xcc] & 0xff)
+}
+
+// TODO why don't i use buf.Write from bytes elsewhere in the code?
+func (c *Client) GetCharacterStat() []byte {
+	buf := bytes.NewBuffer(make([]byte, 0, 300))
+	buf.Write(c.hnPair.GetHNPair())
+	binary.Write(buf, binary.BigEndian, int16(len(c.characterStats)))
+	buf.Write(c.characterStats)
+	return buf.Bytes()
 }

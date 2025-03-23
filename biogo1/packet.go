@@ -1,6 +1,9 @@
 package main
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	// "fmt"
+)
 
 const (
 	HEADER_SIZE = 12
@@ -127,7 +130,15 @@ func (p *Packet) GetDecryptedHNPair() *HNPair {
 
 // return first 2 bytes of payload as int
 func (p *Packet) GetNumber() int {
-	return int(uint16((p.pay[0])<<8) | uint16(p.pay[1]))
+	// TODO: i think this is causing me issues here....
+	// essentially, this function is occasionally used to return the
+	// specific area that we're in, and we're seeing that East Town is
+	// returning 0 but i'm pretty sure it should be returning 1
+
+	// return int(uint16((p.pay[0])<<8) | uint16(p.pay[1]))
+	retval := ((int(p.pay[0]) << 8) & 0xFF00) | (int(p.pay[1]) & 0xFF)
+	// fmt.Printf("\n\n!!!!!!!!\n\np.pay[0] is %d, p.pay[1] is %d; returning %d\n\n!!!!!!!!!!\n\n", p.pay[0], p.pay[1], retval)
+	return retval
 }
 
 func (p *Packet) GetDecryptedString() []byte {
@@ -168,7 +179,7 @@ func (p *Packet) GetEventData() []byte {
 		p.pay[hlen+8+i] = byte(p.pay[hlen+8+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
 	}
 
-	z := make([]byte, hlen + elen + 4)
+	z := make([]byte, hlen+elen+4)
 	off := 0
 
 	binary.BigEndian.PutUint16(z[off:], uint16(hlen))
@@ -205,4 +216,14 @@ func (p *Packet) GetDecryptedPvtMess(sender *Client) *PrivateMessage {
 	copy(message, p.pay[hlen+8:hlen+8+nlen])
 
 	return NewPrivateMessage(sender.hnPair.handle, sender.hnPair.nickname, recipient, message)
+}
+
+func (p *Packet) GetCharacterStats() []byte {
+	leng := int(0xD0)
+	for i := 0; i < leng; i++ {
+		p.pay[4+i] = byte(p.pay[4+i] ^ p.calcShift(byte(i), byte(p.pid&0xff)))
+	}
+	retval := make([]byte, leng)
+	copy(retval, p.pay[4:4+leng])
+	return retval
 }

@@ -341,11 +341,11 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			}
 		case commands.TELL:
 			switch packet.cmd {
-			// case commands.CONNCHECK:
-			//     cl := ph.clients.FindClient(socket)
-			//     if cl != nil {
-			//         cl.ConnAlive = true
-			//     }
+			case commands.CONNCHECK:
+				cl := ph.clients.FindClientBySocket(socket)
+				if cl != nil {
+					cl.ConnAlive = true
+				}
 			case commands.LOGIN:
 				if ph.checkSession(server, socket, packet) {
 					ph.debug("Session check passed!\n")
@@ -373,8 +373,8 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			}
 		case commands.BROADCAST:
 			switch packet.cmd {
-			// case commands.STARTGAME:
-			//     broadcastGetReady(server, socket)
+			case commands.STARTGAME:
+				ph.broadcastGetReady(server, socket)
 			// case commands.CHATIN:
 			//     broadcastChatOut(server, socket, packet)
 			default:
@@ -561,8 +561,8 @@ func (ph *PacketHandler) sendMotheday(server *ServerThread, socket net.Conn, p *
 }
 
 func (ph *PacketHandler) sendCharSelect(server *ServerThread, socket net.Conn, p *Packet) {
-	// cl := ph.clients.FindClientBySocket(socket)
-	// cl.SetCharacterStats(p.GetCharacterStats())
+	cl := ph.clients.FindClientBySocket(socket)
+	cl.SetCharacterStats(p.GetCharacterStats())
 
 	outp := NewPacketWithoutPayload(commands.CHARSELECT, commands.TELL, commands.SERVER, p.pid)
 	ph.addOutPacket(server, socket, outp)
@@ -1282,7 +1282,7 @@ func (ph *PacketHandler) broadcastGetReady(server *ServerThread, socket net.Conn
 		gamenr = ph.getNextGameNumber()
 		for _, c := range ph.clients.GetList() {
 			// TODO double check this
-			if c.area == area && c.room == room && (c.slot == slotnr || c.slot == 0) {
+			if c.area == area && c.room == room && c.slot == slotnr {
 				c.GameNumber = gamenr
 				ph.db.UpdateClientGame(c.userID, gamenr)
 			}
@@ -1350,8 +1350,10 @@ func (ph *PacketHandler) sendJoinGame(server *ServerThread, socket net.Conn, ps 
 	area := cl.area
 	room := cl.room
 
-	retslot := []byte{0, 0}
+	retslot := []byte{0, 1}
 	slotnr := ps.GetNumber()
+	ph.debug("\n\n!!!!!!!!!!!!!!!!\n\nJoining game in area %d room %d slot %d\n\n!!!!!!!!!!!!\n\n", area, room, slotnr)
+	ph.debug("our packet pay[0] and pay[1] were %d and %d\n\n\n\n", ps.pay[0], ps.pay[1])
 
 	// check if slot is free
 	if ph.slots.GetStatus(area, room, slotnr) == STATUS_BUSY {
@@ -1365,7 +1367,7 @@ func (ph *PacketHandler) sendJoinGame(server *ServerThread, socket net.Conn, ps 
 	slot := ph.slots.GetSlot(area, room, slotnr)
 
 	// check if we can join the slot
-	if ph.slots.GetSlot(area, room, slotnr).GetStatus() != STATUS_GAMESET {
+	if slot.GetStatus() != STATUS_GAMESET {
 		mess := NewPacketString("<LF=6><BODY><CENTER>not possible<END>").GetData()
 		p := NewPacket(commands.JOINGAME, commands.TELL, commands.SERVER, ps.pid, mess)
 		p.SetErr()
@@ -1383,6 +1385,7 @@ func (ph *PacketHandler) sendJoinGame(server *ServerThread, socket net.Conn, ps 
 
 		// assign a player number, set slot
 		player := ph.clients.GetFreePlayerNum(area, room, slotnr)
+		ph.debug("!!!!!!!!!!!!!!!!!!!!!!!!\n\n\nfree player number is %d\n", player)
 		cl.slot = slotnr
 		cl.player = byte(player)
 		ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, area, room, slotnr)
@@ -1400,7 +1403,7 @@ func (ph *PacketHandler) sendJoinGame(server *ServerThread, socket net.Conn, ps 
 		ph.broadcastSlotAttrib2(server, area, room, slotnr)
 
 		// broadcast stats of new player
-		status := cl.characterStats
+		status := cl.GetCharacterStat()
 
 		p2 := NewPacket(commands.PLAYERSTATBC, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), status)
 
@@ -1570,7 +1573,7 @@ func (ph *PacketHandler) sendPlayerCount(server *ServerThread, socket net.Conn, 
 	cl := ph.clients.FindClientBySocket(socket)
 	area := cl.area
 	room := cl.room
-	slotnr := ps.GetNumber()
+	slotnr := cl.slot
 	playercount := []byte{0}
 	playercount[0] = byte(ph.clients.CountPlayersInSlot(area, room, slotnr))
 	p := NewPacket(commands.PLAYERCOUNT, commands.TELL, commands.SERVER, ps.pid, playercount)
@@ -1728,7 +1731,13 @@ func (ph *PacketHandler) sendEnterAGL(server *ServerThread, socket net.Conn, ps 
 	p := NewPacketWithoutPayload(commands.ENTERAGL, commands.TELL, commands.SERVER, ps.pid)
 	ph.addOutPacket(server, socket, p)
 
+	// broadcast new playercount
 	ph.broadcastAglPlayerCnt(server, cl.GameNumber)
+
+	status := cl.GetCharacterStat()
+	p = NewPacket(commands.AGLJOIN, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), status)
+	ph.broadcastInAgl(server, p, gamenum)
+
 }
 
 func (ph *PacketHandler) sendLeaveAGL(server *ServerThread, socket net.Conn, ps *Packet) {
@@ -1771,8 +1780,9 @@ func (ph *PacketHandler) sendAGLstats(server *ServerThread, socket net.Conn, ps 
 	off++
 	for _, c := range ph.clients.GetList() {
 		if c.GameNumber == gamenum {
-			statlen := len(c.characterStats)
-			copy(aglstats[off:], c.characterStats)
+			stats := c.GetCharacterStat()
+			statlen := len(stats)
+			copy(aglstats[off:], stats)
 			off += statlen
 		}
 	}
@@ -1817,7 +1827,8 @@ func (ph *PacketHandler) sendEventDat(server *ServerThread, socket net.Conn, ps 
 	copy(eventpacket[off:], event[10:10+eventlen])
 	off += eventlen
 
-	p := NewPacket(commands.EVENTDATBC, commands.TELL, commands.SERVER, ps.pid, eventpacket)
+	// p := NewPacket(commands.EVENTDATBC, commands.TELL, commands.SERVER, ps.pid, eventpacket)
+	p := NewPacket(commands.EVENTDATBC, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), eventpacket)
 	rcl := ph.clients.FindClientByHandle(string(recpt))
 	if rcl != nil {
 		ph.addOutPacket(server, rcl.socket, p)
@@ -2019,19 +2030,37 @@ func (ph *PacketHandler) broadcastSlotStatus(server *ServerThread, area, room, s
 	ph.broadcastInSlotNRoom(server, p, area, room, slot)
 }
 
+// send this every 30 seconds to all clients; handled by heartbeatthread
+// TODO: what does the payload mean ?
+func (ph *PacketHandler) BroadcastPing(server *ServerThread) {
+	data := []byte{0x00, 0x02, 0x00, 0x01, 0x03, byte(0xe7), 0x00, 0x01}
+	p := NewPacket(commands.HEARTBEAT, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), data)
+	ph.broadcastPacket(server, p)
+}
+
+// broadcast a packet to all connected clients
+func (ph *PacketHandler) broadcastPacket(server *ServerThread, p *Packet) {
+	cls := ph.clients.GetList()
+	for _, cl := range cls {
+		ph.addOutPacket(server, cl.socket, p)
+	}
+}
+
 func (ph *PacketHandler) removeClient(server *ServerThread, cl *Client) {
 	if cl == nil {
 		return
 	}
 	ph.debug("Removing client %s\n", cl.userID)
 	// // If needed, lock the client (e.g., cl.mu.Lock(); defer cl.mu.Unlock())
-	// area := cl.area
-	// room := cl.room
-	// slot := cl.slot
+	cl.mu.Lock()
+	defer cl.mu.Unlock()
+	area := cl.area
+	room := cl.room
+	slot := cl.slot
 	// game := cl.gamenumber
 	socket := cl.socket
-	// host := cl.host
-	// who := cl.GetHNPair().handle
+	host := cl.host
+	who := cl.hnPair.handle
 
 	// Set the client status to offline.
 	if err := ph.db.UpdateClientOrigin(cl.userID, STATUS_OFFLINE, -1, 0, 0); err != nil {
@@ -2041,55 +2070,55 @@ func (ph *PacketHandler) removeClient(server *ServerThread, cl *Client) {
 	// Remove the client from the list.
 	ph.clients.Remove(cl)
 
-	// // If the client was a host and occupying a slot, perform slot-specific broadcasts.
-	// if host == 1 && slot != 0 {
-	// 	ph.slots.GetSlot(area, room, slot).Reset()
-	// 	ph.broadcastCancelSlot(server, area, room, slot)
-	// 	ph.broadcastPasswdProtect(server, area, room, slot)
-	// 	ph.broadcastSlotSceneType(server, area, room, slot)
-	// 	ph.broadcastSlotTitle(server, area, room, slot)
-	// 	ph.broadcastSlotAttrib2(server, area, room, slot)
-	// 	ph.broadcastSlotPlayerStatus(server, area, room, slot)
-	// 	ph.broadcastSlotStatus(server, area, room, slot)
-	// }
+	// If the client was a host and occupying a slot, perform slot-specific broadcasts.
+	if host == 1 && slot != 0 {
+		ph.slots.GetSlot(area, room, slot).Reset()
+		ph.broadcastCancelSlot(server, area, room, slot)
+		ph.broadcastPasswdProtect(server, area, room, slot)
+		ph.broadcastSlotSceneType(server, area, room, slot)
+		ph.broadcastSlotTitle(server, area, room, slot)
+		ph.broadcastSlotAttrib2(server, area, room, slot)
+		ph.broadcastSlotPlayerStatus(server, area, room, slot)
+		ph.broadcastSlotStatus(server, area, room, slot)
+	}
 
-	// // If the client was not a host but still in a slot.
-	// if slot != 0 && host == 0 {
-	// 	// Prepare a broadcast packet to notify other players in the slot.
-	// 	wholeaves := []byte{0, 6, 0, 0, 0, 0, 0, 0}
-	// 	copy(wholeaves[2:], who)
-	// 	p := NewPacket(Commands.LEAVESLOT, Commands.BROADCAST, Commands.SERVER, ph.getNextPacketID(), wholeaves)
-	// 	ph.broadcastInSlot(server, p, area, room, slot)
+	// If the client was not a host but still in a slot.
+	if slot != 0 && host == 0 {
+		// Prepare a broadcast packet to notify other players in the slot.
+		wholeaves := []byte{0, 6, 0, 0, 0, 0, 0, 0}
+		copy(wholeaves[2:], who)
+		p := NewPacket(commands.LEAVESLOT, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), wholeaves)
+		ph.broadcastInSlot(server, p, area, room, slot)
 
-	// 	// If there is room for additional players and a host is still present, update slot status.
-	// 	n := ph.clients.CountPlayersInSlot(area, room, slot)
-	// 	maxPlayers := ph.slots.GetMaximumPlayers(area, room, slot)
-	// 	if n < maxPlayers {
-	// 		if ph.clients.GetHostOfSlot(area, room, slot) != nil {
-	// 			ph.slots.GetSlot(area, room, slot).SetStatus(SlotStatusGameSet)
-	// 		}
-	// 	}
+		// If there is room for additional players and a host is still present, update slot status.
+		n := ph.clients.CountPlayersInSlot(area, room, slot)
+		maxPlayers := int(ph.slots.GetMaximumPlayers(area, room, slot))
+		if n < maxPlayers {
+			if ph.clients.GetHostOfSlot(area, room, slot) != nil {
+				ph.slots.GetSlot(area, room, slot).SetStatus(STATUS_GAMESET)
+			}
+		}
 
-	// 	// If this was the last client in the slot, reset the slot and broadcast related changes.
-	// 	if ph.clients.CountPlayersInSlot(area, room, slot) == 0 {
-	// 		ph.slots.GetSlot(area, room, slot).Reset()
-	// 		ph.broadcastPasswdProtect(server, area, room, slot)
-	// 		ph.broadcastSlotSceneType(server, area, room, slot)
-	// 		ph.broadcastSlotTitle(server, area, room, slot)
-	// 	}
+		// If this was the last client in the slot, reset the slot and broadcast related changes.
+		if ph.clients.CountPlayersInSlot(area, room, slot) == 0 {
+			ph.slots.GetSlot(area, room, slot).Reset()
+			ph.broadcastPasswdProtect(server, area, room, slot)
+			ph.broadcastSlotSceneType(server, area, room, slot)
+			ph.broadcastSlotTitle(server, area, room, slot)
+		}
 
-	// 	ph.broadcastSlotAttrib2(server, area, room, slot)
-	// 	ph.broadcastSlotPlayerStatus(server, area, room, slot)
-	// 	ph.broadcastSlotStatus(server, area, room, slot)
-	// }
+		ph.broadcastSlotAttrib2(server, area, room, slot)
+		ph.broadcastSlotPlayerStatus(server, area, room, slot)
+		ph.broadcastSlotStatus(server, area, room, slot)
+	}
 
 	// // In the after-game lobby (area 51) with a valid game number, you might need extra handling.
 	// if area == 51 && game != 0 {
 	// 	// TODO: is this really necessary?
 	// }
 
-	// // Broadcast the updated room player count.
-	// ph.broadcastRoomPlayerCnt(server, area, room)
+	// Broadcast the updated room player count.
+	ph.broadcastRoomPlayerCnt(server, area, room)
 
 	// Finally, disconnect the client socket.
 	server.Disconnect(socket)
@@ -2111,14 +2140,14 @@ func (ph *PacketHandler) send6002(server *ServerThread, socket net.Conn, ps *Pac
 
 	//free slot for other players when last player left
 	// need to implement theese:
-	if(ph.clients.CountPlayersInSlot(area, room, slot) == 0) {
-		ph.slots.GetSlot(area, room, slot).Reset();
-		ph.broadcastSlotPlayerStatus(server, area, room, slot);
-		ph.broadcastPasswdProtect(server, area, room, slot);
-		ph.broadcastSlotTitle(server, area, room, slot);
-		ph.broadcastSlotSceneType(server, area, room, slot);
-		ph.broadcastSlotAttrib2(server, area, room, slot);
-		ph.broadcastSlotStatus(server, area, room, slot);
+	if ph.clients.CountPlayersInSlot(area, room, slot) == 0 {
+		ph.slots.GetSlot(area, room, slot).Reset()
+		ph.broadcastSlotPlayerStatus(server, area, room, slot)
+		ph.broadcastPasswdProtect(server, area, room, slot)
+		ph.broadcastSlotTitle(server, area, room, slot)
+		ph.broadcastSlotSceneType(server, area, room, slot)
+		ph.broadcastSlotAttrib2(server, area, room, slot)
+		ph.broadcastSlotStatus(server, area, room, slot)
 	}
 
 	p := NewPacketWithoutPayload(commands.UNKN6002, commands.TELL, commands.SERVER, ps.pid)
