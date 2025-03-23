@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 )
 
@@ -17,6 +20,7 @@ type GameServerThread struct {
 	readBuffers    map[net.Conn]*ServerStreamBuffer
 	mu             sync.Mutex
 	initOK         bool
+	logger         *log.Logger
 }
 
 func NewGameServerThread(hostAddress string, port int, packetHandler *GameServerPacketHandler) *GameServerThread {
@@ -29,7 +33,27 @@ func NewGameServerThread(hostAddress string, port int, packetHandler *GameServer
 		pendingData:    make(map[net.Conn][][]byte),
 		readBuffers:    make(map[net.Conn]*ServerStreamBuffer),
 		initOK:         true,
+		logger:         log.New(os.Stdout, "", log.Ltime),
 	}
+}
+
+func (g *GameServerThread) debug(format string, v ...interface{}) {
+	pc, file, line, ok := runtime.Caller(2)
+	if !ok {
+		file = "???"
+		line = 0
+	}
+	fn := runtime.FuncForPC(pc)
+	var funcName string
+	if fn != nil {
+		funcName = fn.Name()
+	} else {
+		funcName = "???"
+	}
+	file = filepath.Base(file)
+	msg := fmt.Sprintf(format, v...)
+
+	g.logger.Printf("%s:%d %s() %s", file, line, funcName, msg)
 }
 
 func (g *GameServerThread) Run(wg *sync.WaitGroup) {
@@ -37,15 +61,15 @@ func (g *GameServerThread) Run(wg *sync.WaitGroup) {
 	addr := fmt.Sprintf("%s:%d", g.hostAddress, g.port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatalf("Error starting server on %s: %v", addr, err)
+		g.debug("Error starting server on %s: %v", addr, err)
 	}
 	g.listener = ln
-	fmt.Printf("Game server started on port %d\n", g.port)
+	g.debug("Game server started on port %d\n", g.port)
 	go g.processChangeRequests()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Println("Accept error:", err)
+			g.debug("Accept error: %v", err)
 			continue
 		}
 		g.accept(conn)
@@ -64,25 +88,24 @@ func (g *GameServerThread) processChangeRequests() {
 }
 
 func (g *GameServerThread) accept(conn net.Conn) {
-	fmt.Println("New game connection from", conn.RemoteAddr())
+	g.debug("New game connection from %s\n", conn.RemoteAddr())
 	g.mu.Lock()
 	if _, exists := g.readBuffers[conn]; !exists {
 		g.readBuffers[conn] = NewServerStreamBuffer()
 	}
 	g.mu.Unlock()
-	if g.packetHandler != nil {
-		// g.packetHandler.GSsendLogin(g, conn)
-	}
+	g.packetHandler.GSsendLogin(g, conn)
 	go g.read(conn)
 }
 
 func (g *GameServerThread) read(conn net.Conn) {
-	defer g.close(conn)
+	// defer g.close(conn)
 	buffer := make([]byte, 1024)
 	for {
 		n, err := conn.Read(buffer)
 		if err != nil {
-			log.Println("game Error reading from", conn.RemoteAddr(), err)
+			// log.Println("game Error reading from", conn.RemoteAddr(), err)
+			g.debug("conn %p: Error reading from %s: %v\n", conn, conn.RemoteAddr(), err)
 			return
 		}
 		if n == 0 {
@@ -124,7 +147,8 @@ func (g *GameServerThread) write(conn net.Conn) {
 		g.mu.Unlock()
 		n, err := conn.Write(data)
 		if err != nil {
-			log.Println("game Error writing to", conn.RemoteAddr(), err)
+			// log.Println("game Error writing to", conn.RemoteAddr(), err)
+			g.debug("conn %p: Error reading from %s: %v\n", conn, conn.RemoteAddr(), err)
 			g.close(conn)
 			return
 		}
@@ -152,6 +176,7 @@ func (g *GameServerThread) disconnect(conn net.Conn) {
 }
 
 func (g *GameServerThread) close(conn net.Conn) {
+	g.debug("Closing connection %s\n", conn.RemoteAddr())
 	conn.Close()
 	g.mu.Lock()
 	delete(g.readBuffers, conn)
@@ -159,7 +184,7 @@ func (g *GameServerThread) close(conn net.Conn) {
 	g.mu.Unlock()
 	if g.packetHandler != nil {
 		// ph.debug("game Removing client %s\n", conn.RemoteAddr())
-		// g.packetHandler.removeClientNoDisconnect(g, conn)
+		g.packetHandler.RemoveClientNoDisconnect(g, conn)
 		return
 	}
 }
