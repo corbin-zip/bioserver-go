@@ -13,9 +13,9 @@ func NewSlots(numberOfAreas, numberOfRooms int) *Slots {
     total := numberOfAreas * numberOfRooms * numberOfSlots
     slots := make([]*Slot, total)
     slotNum := 0
-    for area := 0; area < numberOfAreas; area++ {
-        for room := 0; room < numberOfRooms; room++ {
-            for slot := 0; slot < numberOfSlots; slot++ {
+    for area := 1; area <= numberOfAreas; area++ {
+        for room := 1; room <= numberOfRooms; room++ {
+            for slot := 1; slot <= numberOfSlots; slot++ {
                 slots[slotNum] = NewSlot(area, room, slot)
                 slotNum++
             }
@@ -31,7 +31,9 @@ func NewSlots(numberOfAreas, numberOfRooms int) *Slots {
 
 // calcSlotnr calculates the index into the slots slice.
 func (s *Slots) calcSlotnr(area, room, slotnr int) int {
-    return slotnr + (room * s.numberOfSlots) + (area * s.numberOfRooms * s.numberOfSlots) - 1
+    // commented out code only works when area is always 0:
+    // return slotnr + (room * s.numberOfSlots) + (area * s.numberOfRooms * s.numberOfSlots) - 1
+    return (slotnr - 1) + ((room - 1) * s.numberOfSlots) + ((area - 1) * s.numberOfRooms * s.numberOfSlots)
 }
 
 // GetSlot returns the Slot for the given area, room and slotnr.

@@ -552,7 +552,6 @@ func (ph *PacketHandler) sendMotheday(server *ServerThread, socket net.Conn, p *
 	}
 	// TODO note to self: ip.addr == 192.168.1.135 and not ssh and data.data contains 61:4C
 	// should be 1 byte number (1 apparently), 2 byte length (only of motd apparently), then motd
-	// message := "<LF=6><BODY><CENTER>AAAAA HHHHHHH<END>"
 	message = fmt.Sprintf("<LF=6><BODY><CENTER>%s<END>", message)
 	ph.debug("sending MOTD message: %s\n", message)
 	motd := NewMOTD(1, message)
@@ -706,6 +705,7 @@ func (ph *PacketHandler) sendAreaSelect(server *ServerThread, socket net.Conn, p
 	retval := []byte{0, 0}
 	nr := ps.GetNumber()
 	cl := ph.clients.FindClientBySocket(socket)
+	cl.area = nr
 	ph.db.UpdateClientOrigin(cl.userID, STATUS_LOBBY, nr, 0, 0)
 	retval[0] = byte(nr>>8) & 0xff
 	retval[1] = byte(nr) & 0xff
@@ -719,7 +719,7 @@ func (ph *PacketHandler) sendAreaSelect(server *ServerThread, socket net.Conn, p
 func (ph *PacketHandler) sendAreaName(server *ServerThread, socket net.Conn, ps *Packet) {
 	nr := ps.GetNumber()
 	name := ph.areas.GetName(nr)
-	ph.debug("\nRequested area name for area %d: %s\n\n", nr, name)
+	ph.debug("\n\n\n\n\nRequested area name for area %d: %s\n\n\n\n\n", nr, name)
 	namebytes := make([]byte, len(name)+4)
 	namebytes[0] = byte(nr>>8) & 0xff
 	namebytes[1] = byte(nr) & 0xff
@@ -1133,7 +1133,7 @@ func (ph *PacketHandler) sendPlayerStats(server *ServerThread, socket net.Conn, 
 	playerstats := ph.clients.GetPlayerStats(area, room, slotnr)
 
 	// Special character test slot handling TODO
-	if area == 2 && room == 1 && slotnr == 3 {
+	if area == 0x002 && room == 0x001 && slotnr == 0x003 {
 		c := playerstats[3]
 		ptr := 4
 		for t := 0; t < int(c); t++ {
