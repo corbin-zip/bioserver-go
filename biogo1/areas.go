@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 const (
 	STATUS_ACTIVE   byte = 3
 	STATUS_INACTIVE byte = 0
@@ -38,6 +40,12 @@ func (a *Areas) GetDescription(areaNumber int) string {
 }
 
 func (a *Areas) GetStatus(areaNumber int) byte {
+	fmt.Printf("\n\nget status for area %d\n", areaNumber)
+	fmt.Printf("get status for area %d\n", areaNumber)
+	fmt.Printf("get status for area %d\n", areaNumber)
+	fmt.Printf("get status for area %d\n", areaNumber)
+	fmt.Printf("get status for area %d\n", areaNumber)
+	fmt.Printf("get status for area %d\n\n\n", areaNumber)
 	if areaNumber <= 0 || areaNumber > len(a.areas) {
 		return 0
 	}

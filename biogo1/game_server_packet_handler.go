@@ -243,3 +243,17 @@ func (gsp *GameServerPacketHandler) RemoveClientNoDisconnect(server *GameServerT
 		gsp.clients.Remove(cl)
 	}
 }
+
+func (gsp *GameServerPacketHandler) ConnCheck(server *GameServerThread) {
+	cls := gsp.clients.GetList()
+	for _, cl := range cls {
+		if cl == nil {
+			continue
+		}
+		if cl.ConnAlive {
+			cl.ConnAlive = false
+		} else { 
+			gsp.removeClient(server, cl)
+		}
+	}
+}

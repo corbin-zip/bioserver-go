@@ -39,7 +39,6 @@ func main() {
 	go lobbyServer.Run(&wg)
 
 	// create the game server thread
-	// gamePacketHandler := &GameServerPacketHandler{}
 	gamePacketHandler := NewGameServerPacketHandler()
 	gameServer := NewGameServerThread("192.168.1.135", GAMEPORT, gamePacketHandler)
 	wg.Add(1)
@@ -51,6 +50,7 @@ func main() {
 	packetHandler.SetGameServerPacketHandler(gamePacketHandler)
 
 	// thread for the keepalivepings and cleanups
+	wg.Add(1)
 	heartbeat := NewHeartBeatThread(lobbyServer, packetHandler, gameServer, gamePacketHandler)
 	go heartbeat.Run()
 

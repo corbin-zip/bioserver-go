@@ -227,3 +227,13 @@ func (p *Packet) GetCharacterStats() []byte {
 	copy(retval, p.pay[4:4+leng])
 	return retval
 }
+
+// decrypts and returns chat data
+func (p *Packet) GetChatOutData() []byte {
+	p.CryptString()
+
+	leng := int(p.pay[0] << 8) | int(p.pay[1]) - 2
+	retval := make([]byte, leng)
+	copy(retval, p.pay[4:4+leng])
+	return retval
+}

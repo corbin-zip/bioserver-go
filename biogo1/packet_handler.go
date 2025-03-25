@@ -375,8 +375,8 @@ func (ph *PacketHandler) HandleInPacket(server *ServerThread, socket net.Conn, p
 			switch packet.cmd {
 			case commands.STARTGAME:
 				ph.broadcastGetReady(server, socket)
-			// case commands.CHATIN:
-			//     broadcastChatOut(server, socket, packet)
+			case commands.CHATIN:
+			    ph.broadcastChatOut(server, socket, packet)
 			default:
 				ph.debug("Unknown command on broadcast: %d (0x%X)\n", packet.cmd, packet.cmd)
 			}
@@ -820,6 +820,40 @@ func (ph *PacketHandler) sendEnterRoom(server *ServerThread, socket net.Conn, ps
 	p := NewPacket(commands.ENTERROOM, commands.TELL, commands.SERVER, ps.pid, retval)
 	ph.addOutPacket(server, socket, p)
 	ph.broadcastRoomPlayerCnt(server, area, roomnr)
+}
+
+// this is closer to how the java code does the bytebuffer stuff
+// TODO: maybe look at replacing other areas of the go code with this strategy
+func (ph *PacketHandler) broadcastChatOut(server *ServerThread, socket net.Conn, ps *Packet) {
+    cl := ph.clients.FindClientBySocket(socket)
+    area := cl.area
+    room := cl.room
+    slot := cl.slot
+
+    var broadcast bytes.Buffer
+
+    // who is sending the message
+	broadcast.Write(cl.hnPair.GetHNPair())
+
+    // copy message and save to database
+    mess := ps.GetChatOutData()
+
+    binary.Write(&broadcast, binary.BigEndian, int16(len(mess)))
+    broadcast.Write(mess)
+    broadcast.WriteByte(0)
+    binary.Write(&broadcast, binary.BigEndian, int32(0x000000ff))
+
+    r := broadcast.Bytes()
+
+	p := NewPacket(commands.CHATOUT, commands.BROADCAST, commands.SERVER, ph.getNextPacketID(), r)
+
+    if slot > 0 {
+        ph.broadcastInSlot(server, p, area, room, slot)
+    } else if area != 0 && area != 51 {
+        ph.broadcastInArea(server, p, area)
+    } else if cl.GameNumber > 0 {
+        ph.broadcastInAgl(server, p, cl.GameNumber)
+    }
 }
 
 func (ph *PacketHandler) broadcastRoomPlayerCnt(server *ServerThread, area, room int) {
@@ -2250,4 +2284,42 @@ func (ph *PacketHandler) RemoveClientNoDisconnect(server *ServerThread, socket n
 
 	// Broadcast the updated room player count.
 	ph.broadcastRoomPlayerCnt(server, area, room)
+}
+
+// check the livetime of the slot
+// broadcast the autostart on zero
+// used for the East Town (area 0x001)
+func (ph *PacketHandler) CheckAutoStart(server *ServerThread) {
+	cls := ph.clients.GetList()
+	for _, cl := range cls {
+		area := cl.area
+		room := cl.room
+		slot := cl.slot
+		if (area == 1 && room == 1 && slot != 0) {
+			livetime := ph.slots.GetSlot(area, room, slot).GetLivetime()
+			ph.debug("Livetime of area 1 room 1: %d\n", livetime)
+			if livetime == 0 {
+				ph.broadcastGetReady(server, cl.socket)
+			}
+		}
+	}
+}
+
+// helper for keeping slots open when something went wrong
+func (ph *PacketHandler) CleanGhostRooms(server *ServerThread) {
+	// 1. we should probably just use .Reset() on the slot instead of simply changing its status
+	// 2. i think slot is 0-indexed elsewhere in the code. why is it 1-indexed here? ...
+	for area := 1; area <= ph.areas.GetAreaCount(); area++ {
+		for room := 1; room <= ph.rooms.GetRoomCount(); room++ {
+			for slot := 1; slot <= 20; slot++ {
+				if ph.slots.GetStatus(area, room, slot) == STATUS_GAMESET && ph.clients.CountPlayersInSlot(area, room, slot) == 0 {
+					// ph.slots.GetSlot(area, room, slot).Reset()
+					ph.slots.GetSlot(area, room, slot).SetStatus(STATUS_FREE)
+					ph.broadcastSlotStatus(server, area, room, slot)
+					ph.debug("Cleaned ghost room: a%d r%d s%d\n", area, room, slot)
+				}
+			}
+		}
+	}
+
 }

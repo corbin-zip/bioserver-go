@@ -25,10 +25,9 @@ func (hbt *HeartBeatThread) Run() {
 	counter2 := 0
 
 	for {
-		// fmt.Println("Heartbeat check running")
 		hbt.packetHandler.BroadcastPing(hbt.lobbyServer)
-		// h.gamePacketHandler.ConnCheck(h.gameServer)
-		// h.packetHandler.CheckAutoStart(h.lobbyServer)
+		hbt.gamePacketHandler.ConnCheck(hbt.gameServer)
+		hbt.packetHandler.CheckAutoStart(hbt.lobbyServer)
 		if counter == 1 {
 			hbt.packetHandler.BroadcastConnCheck(hbt.lobbyServer)
 			counter = 0
@@ -37,7 +36,7 @@ func (hbt *HeartBeatThread) Run() {
 		}
 
 		if counter2 == 9 {
-			// h.packetHandler.CleanGhostRooms(h.lobbyServer)
+			hbt.packetHandler.CleanGhostRooms(hbt.lobbyServer)
 			counter2 = 0
 		} else {
 			counter2++

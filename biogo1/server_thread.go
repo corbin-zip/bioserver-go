@@ -136,15 +136,6 @@ func (s *ServerThread) write(conn net.Conn) {
 			return
 		}
 
-		// if n < len(data) {
-		// 	s.mu.Lock()
-		// 	s.pendingData[conn][0] = data[n:]
-		// 	s.mu.Unlock()
-		// } else {
-		// 	s.mu.Lock()
-		// 	s.pendingData[conn] = s.pendingData[conn][1:]
-		// 	s.mu.Unlock()
-		// }
 		s.mu.Lock()
 		if n < len(data) {
 			s.pendingData[conn][0] = data[n:]
